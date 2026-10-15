@@ -475,89 +475,89 @@ requirementDiagram
 
     requirement scoped_subject {
         id: R1
-        text: Write normal commit subjects with scope before description
+        text: "Write normal commit subjects with scope before description"
         risk: High
         verifymethod: Test
     }
 
     requirement no_type_prefix {
         id: R2
-        text: Do not prefix subjects with a Conventional Commits type
+        text: "Do not prefix subjects with a Conventional Commits type"
         risk: High
         verifymethod: Test
     }
 
     requirement area_scope {
         id: R3
-        text: Name a project area as scope, never a change kind, file, or ticket
+        text: "Name a project area as scope, never a change kind, file, or ticket"
         risk: High
         verifymethod: Inspection
     }
 
     requirement project_precedence {
         id: R4
-        text: Apply repository rules over SHOULD and MAY rules and halt for MUST conflicts
+        text: "Apply repository rules over SHOULD and MAY rules and halt for MUST conflicts"
         risk: High
         verifymethod: Inspection
     }
 
     requirement blank_line {
         id: R5
-        text: Separate the subject from body and trailers with one blank line
+        text: "Separate the subject from body and trailers with one blank line"
         risk: Medium
         verifymethod: Test
     }
 
     requirement reuse_vocabulary {
         id: R6
-        text: Reuse existing project scope vocabulary before inventing names
+        text: "Reuse existing project scope vocabulary before inventing names"
         risk: Medium
         verifymethod: Inspection
     }
 
     requirement multi_scope {
         id: R7
-        text: Use the earliest applicable option among general scope, scope list, treewide, and special commit
+        text: "Use the earliest applicable option among general scope, scope list, treewide, and special commit"
         risk: Medium
         verifymethod: Inspection
     }
 
     requirement ticket_placement {
         id: R8
-        text: Place ticket references after the scope or in trailers, never as the scope
+        text: "Place ticket references after the scope or in trailers, never as the scope"
         risk: Medium
         verifymethod: Test
     }
 
     requirement no_log_changelog {
         id: R9
-        text: Do not generate user-facing changelogs from the commit log
+        text: "Do not generate user-facing changelogs from the commit log"
         risk: High
         verifymethod: Inspection
     }
 
     requirement diff_based_automation {
         id: R10
-        text: Select automation work from changed paths, not commit subjects or types
+        text: "Select automation work from changed paths, not commit subjects or types"
         risk: High
         verifymethod: Inspection
     }
 
     requirement revert_handling {
         id: R11
-        text: Keep original merge and revert subjects by default and allow scoped reverts only as a project style
+        text: "Keep original merge and revert subjects by default and allow scoped reverts only as a project style"
         risk: Medium
         verifymethod: Inspection
     }
 
     element commit_message {
         type: artifact
-        docRef: Git commit message
+        docRef: "Git commit message"
     }
 
     element project_policy {
         type: artifact
-        docRef: CONTRIBUTING.md AGENTS.md or repo hooks
+        docRef: "CONTRIBUTING.md, AGENTS.md or repo hooks"
     }
 
     commit_message - satisfies -> scoped_subject
