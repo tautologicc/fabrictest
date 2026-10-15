@@ -7,10 +7,18 @@
 
 import { after, before, describe, it } from "node:test";
 import { spawnSync } from "node:child_process";
-import { accessSync, constants, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  accessSync,
+  closeSync,
+  constants,
+  mkdtempSync,
+  openSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import checkCommitMessage from "./check-commit-message.mjs";
 
@@ -34,8 +42,8 @@ describe("library: checkCommitMessage()", () => {
 
     it("returns ok with no issues", async (t) => {
       for (const [name, subject] of cases) {
-        await t.test(name, (subtest) => {
-          const result = checkCommitMessage(subject);
+        await t.test(name, async (subtest) => {
+          const result = await checkCommitMessage(subject);
           subtest.assert.equal(result.ok, true);
           subtest.assert.equal(result.special, false);
           subtest.assert.equal(result.subject, subject);
@@ -46,8 +54,8 @@ describe("library: checkCommitMessage()", () => {
   });
 
   describe("issue reporting", () => {
-    it("reports a Conventional Commits prefix as an error", (t) => {
-      const result = checkCommitMessage("fix(auth): prevent the token race");
+    it("reports a Conventional Commits prefix as an error", async (t) => {
+      const result = await checkCommitMessage("fix(auth): prevent the token race");
       t.assert.equal(result.ok, false);
       t.assert.equal(result.special, false);
       t.assert.deepEqual(
@@ -57,8 +65,8 @@ describe("library: checkCommitMessage()", () => {
       t.assert.match(result.issues[0].message, /Conventional Commits type prefix/);
     });
 
-    it("reports whitespace around the scope as a non-fatal warning", (t) => {
-      const result = checkCommitMessage("auth : fix login");
+    it("reports whitespace around the scope as a non-fatal warning", async (t) => {
+      const result = await checkCommitMessage("auth : fix login");
       t.assert.equal(result.ok, true);
       t.assert.deepEqual(
         result.issues.map((issue) => issue.severity),
@@ -67,14 +75,14 @@ describe("library: checkCommitMessage()", () => {
       t.assert.match(result.issues[0].message, /leading or trailing whitespace/);
     });
 
-    it("reports a long subject as a non-fatal warning", (t) => {
-      const result = checkCommitMessage(`auth: ${"x".repeat(80)}`);
+    it("reports a long subject as a non-fatal warning", async (t) => {
+      const result = await checkCommitMessage(`auth: ${"x".repeat(80)}`);
       t.assert.equal(result.ok, true);
       t.assert.match(result.issues[0].message, /longer than 72/);
     });
 
-    it("keeps issues in discovery order", (t) => {
-      const result = checkCommitMessage("auth : fix login\nno blank line");
+    it("keeps issues in discovery order", async (t) => {
+      const result = await checkCommitMessage("auth : fix login\nno blank line");
       t.assert.equal(result.ok, false);
       t.assert.deepEqual(
         result.issues.map((issue) => issue.severity),
@@ -100,28 +108,28 @@ describe("library: checkCommitMessage()", () => {
 
     it("rejects every type prefix", async (t) => {
       for (const type of types) {
-        await t.test(type, (subtest) => {
-          const result = checkCommitMessage(`${type}: do the thing`);
+        await t.test(type, async (subtest) => {
+          const result = await checkCommitMessage(`${type}: do the thing`);
           subtest.assert.equal(result.ok, false);
           subtest.assert.match(result.issues[0].message, /Conventional Commits type prefix/);
         });
       }
     });
 
-    it("rejects a scoped type", (t) => {
-      const result = checkCommitMessage("fix(auth): prevent the token race");
+    it("rejects a scoped type", async (t) => {
+      const result = await checkCommitMessage("fix(auth): prevent the token race");
       t.assert.equal(result.ok, false);
     });
 
-    it("rejects a breaking-change marker", (t) => {
-      const result = checkCommitMessage("feat(core)!: drop the legacy API");
+    it("rejects a breaking-change marker", async (t) => {
+      const result = await checkCommitMessage("feat(core)!: drop the legacy API");
       t.assert.equal(result.ok, false);
     });
 
-    it("rejects lowercase revert: as a type prefix", (t) => {
+    it("rejects lowercase revert: as a type prefix", async (t) => {
       // Stock git reverts use `Revert "..."` and remain exempt (see
       // "special commits"); `revert:` is a Conventional Commits type prefix.
-      const result = checkCommitMessage("revert: undo the thing");
+      const result = await checkCommitMessage("revert: undo the thing");
       t.assert.equal(result.ok, false);
       t.assert.match(result.issues[0].message, /Conventional Commits type prefix/);
     });
@@ -130,8 +138,8 @@ describe("library: checkCommitMessage()", () => {
   describe("scope quality", () => {
     it("rejects ticket-like scopes", async (t) => {
       for (const scope of ["PROJ-123", "#42"]) {
-        await t.test(scope, (subtest) => {
-          const result = checkCommitMessage(`${scope}: fix login bug`);
+        await t.test(scope, async (subtest) => {
+          const result = await checkCommitMessage(`${scope}: fix login bug`);
           subtest.assert.equal(result.ok, false);
           subtest.assert.match(result.issues[0].message, /ticket-like scope/);
         });
@@ -140,19 +148,19 @@ describe("library: checkCommitMessage()", () => {
   });
 
   describe("subject structure", () => {
-    it("rejects a missing separator", (t) => {
-      const result = checkCommitMessage("auth fix login");
+    it("rejects a missing separator", async (t) => {
+      const result = await checkCommitMessage("auth fix login");
       t.assert.equal(result.ok, false);
       t.assert.match(result.issues[0].message, /missing ': ' or an empty scope\/description/);
     });
 
-    it("rejects an empty scope", (t) => {
-      const result = checkCommitMessage(": fix login");
+    it("rejects an empty scope", async (t) => {
+      const result = await checkCommitMessage(": fix login");
       t.assert.equal(result.ok, false);
     });
 
-    it("rejects an empty message", (t) => {
-      const result = checkCommitMessage("");
+    it("rejects an empty message", async (t) => {
+      const result = await checkCommitMessage("");
       t.assert.equal(result.ok, false);
       t.assert.equal(result.subject, "");
       t.assert.deepEqual(result.issues, [
@@ -160,8 +168,8 @@ describe("library: checkCommitMessage()", () => {
       ]);
     });
 
-    it("reports a comments-only message as empty", (t) => {
-      const result = checkCommitMessage("# just a comment\n");
+    it("reports a comments-only message as empty", async (t) => {
+      const result = await checkCommitMessage("# just a comment\n");
       t.assert.equal(result.ok, false);
       t.assert.equal(result.subject, "");
       t.assert.deepEqual(result.issues, [
@@ -171,33 +179,95 @@ describe("library: checkCommitMessage()", () => {
   });
 
   describe("normalization", () => {
-    it("accepts a blank line before the body", (t) => {
-      const result = checkCommitMessage("auth: fix login\n\nWhy it was broken.\n");
+    it("accepts a blank line before the body", async (t) => {
+      const result = await checkCommitMessage("auth: fix login\n\nWhy it was broken.\n");
       t.assert.equal(result.ok, true);
     });
 
-    it("accepts a trailer paragraph", (t) => {
-      const result = checkCommitMessage("auth: fix login\n\nJira-Ticket: PROJ-123\n");
+    it("accepts a trailer paragraph", async (t) => {
+      const result = await checkCommitMessage("auth: fix login\n\nJira-Ticket: PROJ-123\n");
       t.assert.equal(result.ok, true);
     });
 
-    it("rejects a body on line two", (t) => {
-      const result = checkCommitMessage("auth: fix login\nWhy it was broken.");
+    it("rejects a body on line two", async (t) => {
+      const result = await checkCommitMessage("auth: fix login\nWhy it was broken.");
       t.assert.equal(result.ok, false);
       t.assert.match(result.issues[0].message, /blank line/);
     });
 
-    it("accepts CRLF input", (t) => {
-      const result = checkCommitMessage("auth: fix login\r\n\r\nBody.\r\n");
+    it("accepts CRLF input", async (t) => {
+      const result = await checkCommitMessage("auth: fix login\r\n\r\nBody.\r\n");
       t.assert.equal(result.ok, true);
     });
 
-    it("ignores git template comments", (t) => {
-      const result = checkCommitMessage(
+    it("accepts lone CR line endings", async (t) => {
+      const result = await checkCommitMessage("auth: fix login\r\rBody.\r");
+      t.assert.equal(result.ok, true);
+      t.assert.equal(result.subject, "auth: fix login");
+    });
+
+    it("skips comments between the subject and the body", async (t) => {
+      const result = await checkCommitMessage("auth: fix login\n# a comment\nBody.");
+      t.assert.equal(result.ok, false);
+      t.assert.match(result.issues[0].message, /blank line/);
+    });
+
+    it("ignores git template comments", async (t) => {
+      const result = await checkCommitMessage(
         "# Please enter the commit message\n#\nauth: fix login\n# On branch main\n",
       );
       t.assert.equal(result.ok, true);
       t.assert.equal(result.subject, "auth: fix login");
+    });
+  });
+
+  describe("input types", () => {
+    let dir;
+
+    before(() => {
+      dir = mkdtempSync(join(tmpdir(), "scopedcommits-input-"));
+    });
+
+    after(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("reads a file: URL", async (t) => {
+      const path = join(dir, "URL_MSG");
+      writeFileSync(path, "auth: from a URL\n");
+      const result = await checkCommitMessage(pathToFileURL(path));
+      t.assert.equal(result.ok, true);
+      t.assert.equal(result.subject, "auth: from a URL");
+    });
+
+    it("reads a File object", async (t) => {
+      const file = new File(["auth: from a File\n"], "COMMIT_EDITMSG");
+      const result = await checkCommitMessage(file);
+      t.assert.equal(result.ok, true);
+      t.assert.equal(result.subject, "auth: from a File");
+    });
+
+    it("reads a file descriptor", async (t) => {
+      const path = join(dir, "FD_MSG");
+      writeFileSync(path, "auth: from a descriptor\n");
+      const fd = openSync(path, "r");
+      try {
+        const result = await checkCommitMessage(fd);
+        t.assert.equal(result.ok, true);
+      } finally {
+        closeSync(fd);
+      }
+    });
+
+    it("rejects unsupported input", async (t) => {
+      await t.assert.rejects(() => checkCommitMessage(null), TypeError);
+    });
+
+    it("propagates read errors", async (t) => {
+      await t.assert.rejects(
+        () => checkCommitMessage(pathToFileURL(join(dir, "MISSING"))),
+        /ENOENT/,
+      );
     });
   });
 
@@ -213,8 +283,8 @@ describe("library: checkCommitMessage()", () => {
 
     it("returns special commits without issues", async (t) => {
       for (const subject of specials) {
-        await t.test(subject, (subtest) => {
-          const result = checkCommitMessage(subject);
+        await t.test(subject, async (subtest) => {
+          const result = await checkCommitMessage(subject);
           subtest.assert.equal(result.ok, true);
           subtest.assert.equal(result.special, true);
           subtest.assert.equal(result.subject, subject);
@@ -233,33 +303,33 @@ describe("library: checkCommitMessage()", () => {
 
     it("accepts the preferred version-change form", async (t) => {
       for (const subject of versionChanges) {
-        await t.test(subject, (subtest) => {
-          const result = checkCommitMessage(subject);
+        await t.test(subject, async (subtest) => {
+          const result = await checkCommitMessage(subject);
           subtest.assert.equal(result.ok, true);
         });
       }
     });
 
-    it("accepts the scheme's zero version for a first release", (t) => {
-      const result = checkCommitMessage("release: 0.0.0 -> 1.0.0");
+    it("accepts the scheme's zero version for a first release", async (t) => {
+      const result = await checkCommitMessage("release: 0.0.0 -> 1.0.0");
       t.assert.equal(result.ok, true);
     });
 
-    it("accepts a plain version, since the arrow is preferred but not enforced", (t) => {
-      const result = checkCommitMessage("release: 2.4.0");
+    it("accepts a plain version, since the arrow is preferred but not enforced", async (t) => {
+      const result = await checkCommitMessage("release: 2.4.0");
       t.assert.equal(result.ok, true);
     });
 
-    it("rejects a Conventional Commits release subject", (t) => {
-      const result = checkCommitMessage("chore: release 2.4.0");
+    it("rejects a Conventional Commits release subject", async (t) => {
+      const result = await checkCommitMessage("chore: release 2.4.0");
       t.assert.equal(result.ok, false);
       t.assert.match(result.issues[0].message, /Conventional Commits type prefix/);
     });
 
     it("rejects event-style subjects unless a project hook allows them", async (t) => {
       for (const subject of ["Release 2.4.0", "v2.4.0"]) {
-        await t.test(subject, (subtest) => {
-          const result = checkCommitMessage(subject);
+        await t.test(subject, async (subtest) => {
+          const result = await checkCommitMessage(subject);
           subtest.assert.equal(result.ok, false);
           subtest.assert.match(result.issues[0].message, /<scope>: <description>/);
         });
@@ -269,63 +339,58 @@ describe("library: checkCommitMessage()", () => {
 });
 
 describe("CLI: check-commit-message.mjs", () => {
-  describe("success output", () => {
-    it("prints the subject and exits 0", (t) => {
-      const result = run(["-"], "auth: fix the thing\n");
+  describe("default output", () => {
+    it("is silent on success", (t) => {
+      const result = run(["-"], "auth: fix login");
       t.assert.equal(result.status, 0);
-      t.assert.match(result.stdout, /^check-commit-message\.mjs: ok: auth: fix the thing$/m);
+      t.assert.equal(result.stdout, "");
       t.assert.equal(result.stderr, "");
     });
 
-    it("announces a skipped special commit", (t) => {
-      const result = run(["-"], 'Revert "auth: fix login"\n');
+    it("is silent for special commits", (t) => {
+      const result = run(["-"], 'Revert "auth: fix login"');
       t.assert.equal(result.status, 0);
-      t.assert.match(result.stdout, /ok \(special commit, skipped\)/);
+      t.assert.equal(result.stdout, "");
     });
-  });
 
-  describe("failure output", () => {
-    it("prints errors and exits 1", (t) => {
+    it("still prints warnings", (t) => {
+      const result = run(["-"], "auth : fix login");
+      t.assert.equal(result.status, 0);
+      t.assert.equal(result.stdout, "");
+      t.assert.match(result.stderr, /warning: scope "auth " has leading or trailing whitespace/);
+    });
+
+    it("still prints errors", (t) => {
       const result = run(["-"], "fix(auth): nope");
       t.assert.equal(result.status, 1);
       t.assert.equal(result.stdout, "");
       t.assert.match(result.stderr, /error: Conventional Commits type prefix/);
       t.assert.match(result.stderr, /commit message does not follow Scoped Commits/);
     });
-
-    it("prints warnings without failing", (t) => {
-      const result = run(["-"], "auth : fix login");
-      t.assert.equal(result.status, 0);
-      t.assert.match(result.stderr, /warning: scope "auth " has leading or trailing whitespace/);
-      t.assert.match(result.stdout, /ok: auth : fix login/);
-    });
   });
 
-  describe("--quiet", () => {
-    it("suppresses success output", (t) => {
-      const result = run(["-q", "-"], "auth: fix login");
+  describe("--verbose", () => {
+    it("prints the success message", (t) => {
+      const result = run(["-v", "-"], "auth: fix the thing\n");
       t.assert.equal(result.status, 0);
-      t.assert.equal(result.stdout, "");
+      t.assert.match(result.stdout, /^check-commit-message\.mjs: ok: auth: fix the thing$/m);
       t.assert.equal(result.stderr, "");
     });
 
-    it("suppresses special-commit output", (t) => {
-      const result = run(["-q", "-"], 'Revert "auth: fix login"');
+    it("announces a skipped special commit", (t) => {
+      const result = run(["--verbose", "-"], 'Revert "auth: fix login"\n');
       t.assert.equal(result.status, 0);
-      t.assert.equal(result.stdout, "");
+      t.assert.match(result.stdout, /ok \(special commit, skipped\)/);
     });
 
-    it("does not suppress errors", (t) => {
-      const result = run(["-q", "-"], "fix(auth): nope");
-      t.assert.equal(result.status, 1);
-      t.assert.equal(result.stdout, "");
-      t.assert.match(result.stderr, /error: Conventional Commits type prefix/);
-    });
+    it("does not hide warnings or errors", (t) => {
+      const warned = run(["-v", "-"], "auth : fix login");
+      t.assert.equal(warned.status, 0);
+      t.assert.match(warned.stderr, /warning: scope/);
 
-    it("does not suppress warnings", (t) => {
-      const result = run(["-q", "-"], "auth : fix login");
-      t.assert.equal(result.status, 0);
-      t.assert.match(result.stderr, /warning: scope/);
+      const failed = run(["-v", "-"], "fix(auth): nope");
+      t.assert.equal(failed.status, 1);
+      t.assert.match(failed.stderr, /error: Conventional Commits type prefix/);
     });
   });
 
@@ -366,7 +431,7 @@ describe("CLI: check-commit-message.mjs", () => {
     let dir;
 
     before(() => {
-      dir = mkdtempSync(join(tmpdir(), "scopedcommits-test-"));
+      dir = mkdtempSync(join(tmpdir(), "scopedcommits-cli-"));
     });
 
     after(() => {
@@ -374,31 +439,31 @@ describe("CLI: check-commit-message.mjs", () => {
     });
 
     it("reads the message from stdin when FILE is omitted", (t) => {
-      t.assert.equal(run(["-q"], "auth: from stdin").status, 0);
+      t.assert.equal(run([], "auth: from stdin").status, 0);
     });
 
     it("reads the message from stdin for '-'", (t) => {
-      t.assert.equal(run(["-q", "-"], "auth: from stdin").status, 0);
+      t.assert.equal(run(["-"], "auth: from stdin").status, 0);
     });
 
     it("reads a message file passed as FILE", (t) => {
       const file = join(dir, "COMMIT_EDITMSG");
       writeFileSync(file, "auth: from a file\n");
-      t.assert.equal(run(["-q", file]).status, 0);
+      t.assert.equal(run([file]).status, 0);
     });
 
     it("reads a message file after --", (t) => {
       const file = join(dir, "AFTER_DASH_DASH");
       writeFileSync(file, "auth: after --\n");
-      t.assert.equal(run(["-q", "--", file]).status, 0);
+      t.assert.equal(run(["--", file]).status, 0);
     });
 
     it("treats stdin and file input identically", (t) => {
       const message = "auth: same either way\n\nWith a body.\n";
       const file = join(dir, "SAME");
       writeFileSync(file, message);
-      const fromStdin = run(["-q", "-"], message);
-      const fromFile = run(["-q", file]);
+      const fromStdin = run(["-"], message);
+      const fromFile = run([file]);
       t.assert.deepEqual(
         { status: fromFile.status, stdout: fromFile.stdout, stderr: fromFile.stderr },
         { status: fromStdin.status, stdout: fromStdin.stdout, stderr: fromStdin.stderr },

@@ -1,9 +1,10 @@
 # scripts
 
 `check-commit-message.mjs` is the Scoped Commits `commit-msg` validator. It is
-both an executable — parses argv, reads a file or stdin, exits 0/1/2 — and a
-library: its default export is `checkCommitMessage(message)`, returning
-`{ ok, special, subject, issues }`.
+both an executable — parses argv, exits 0/1/2 — and a library: its default
+export is the async `checkCommitMessage(input)`, returning
+`{ ok, special, subject, issues }`. `input` may be a message string, a `file:`
+`URL`, a file descriptor, or a `File`/`Blob`.
 
 Requires Node.js 24 or newer: the CLI entry guard uses `import.meta.main`, and
 the tests use the `node:test` context assertion API.

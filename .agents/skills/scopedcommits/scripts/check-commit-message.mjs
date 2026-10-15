@@ -4,14 +4,19 @@
 //
 // As a library:
 //   import checkCommitMessage from "./check-commit-message.mjs";
-//   const { ok, issues } = checkCommitMessage(message);
+//   const { ok, issues } = await checkCommitMessage(input);
+//
+// `input` may be a message string, a `file:` URL, a file descriptor, or a
+// `File`/`Blob`.
 //
 // As a commit-msg hook:
 //   node check-commit-message.mjs "$1"
 
-import { readFileSync } from "node:fs";
+import { createReadStream } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { text } from "node:stream/consumers";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const CC_TYPES = "build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test";
 
@@ -26,48 +31,93 @@ const SPECIAL_SUBJECTS = [
 ];
 
 /**
+ * Read the message text from any accepted input.
+ *
+ * @param {string | URL | number | { text(): Promise<string> }} input
+ * @returns {Promise<string>}
+ */
+async function readMessage(input) {
+  if (typeof input === "string") {
+    return input;
+  }
+  if (typeof input === "number") {
+    return text(createReadStream(null, { fd: input, autoClose: false }));
+  }
+  if (input instanceof URL) {
+    return readFile(input, "utf8");
+  }
+  if (input !== null && typeof input.text === "function") {
+    return input.text();
+  }
+  throw new TypeError(
+    "checkCommitMessage expects a message string, a file URL, a file descriptor, or a File",
+  );
+}
+
+/** A Git template comment line starts with "# " or is a bare "#". */
+const isComment = (line) => /^#[ \t]/.test(line) || /^#$/.test(line);
+
+/** Yield lines split on LF, CRLF, or lone CR without copying the message. */
+function* lines(message) {
+  const terminator = /\r\n?|\n/g;
+  let start = 0;
+  for (let match; (match = terminator.exec(message)) !== null; start = terminator.lastIndex) {
+    yield message.slice(start, match.index);
+  }
+  yield message.slice(start);
+}
+
+/**
+ * Find the subject and the next non-comment line, stopping as soon as both
+ * are known. Leading blank lines and comment lines are ignored; body and
+ * trailer content is never read.
+ */
+function findSubjectAndSecond(message) {
+  let subject = null;
+  let second = "";
+
+  for (const line of lines(message)) {
+    if (subject === null) {
+      if (!/^\s*$/.test(line) && !isComment(line)) {
+        subject = line;
+      }
+    } else if (!isComment(line)) {
+      second = line;
+      break;
+    }
+  }
+
+  return { subject: subject ?? "", second };
+}
+
+/**
  * Validate a commit message against the Scoped Commits convention.
  *
- * The message is normalized first: CRLF becomes LF, Git comment lines are
- * dropped, leading/trailing blank lines are trimmed. A subject such as
- * "#42: ..." is kept so it can be flagged as a ticket-like scope.
+ * The input is read first: a string is the message itself, a `file:` URL or
+ * file descriptor is read from disk, and a `File`/`Blob` is read as text.
+ * Only the subject and the next non-comment line are parsed: LF, CRLF, and
+ * lone CR are treated as line breaks, Git comment lines are skipped, and
+ * leading blank lines are ignored. A subject such as "#42: ..." is kept so
+ * it can be flagged as a ticket-like scope.
  *
- * @param {string} message Raw commit message.
- * @returns {{
+ * @param {string | URL | number | { text(): Promise<string> }} input
+ * @returns {Promise<{
  *   ok: boolean,
  *   special: boolean,
  *   subject: string,
  *   issues: Array<{ severity: "error" | "warning", message: string }>,
- * }} `ok` is true when there are no error-severity issues; `special` marks
+ * }>} `ok` is true when there are no error-severity issues; `special` marks
  *   merge/revert/fixup/squash/amend commits, which are accepted as-is;
  *   `issues` preserves discovery order for display.
  */
-export default function checkCommitMessage(message) {
+export default async function checkCommitMessage(input) {
+  const message = await readMessage(input);
+
   const issues = [];
   const error = (text) => issues.push({ severity: "error", message: text });
   const warn = (text) => issues.push({ severity: "warning", message: text });
 
-  // Normalize CRLF and drop Git comment lines and leading blank lines.
-  // Git template comments start with "# " (or are a bare "#");
-  // a subject such as "#42: ..." is kept so it can be flagged.
-  const cleaned = [];
-  let begun = false;
-  for (const line of message.replace(/\r\n?/g, "\n").split("\n")) {
-    if (!begun && /^\s*$/.test(line)) {
-      continue;
-    }
-    if (/^#[ \t]/.test(line) || /^#$/.test(line)) {
-      continue;
-    }
-    begun = true;
-    cleaned.push(line);
-  }
-  while (cleaned.length > 0 && /^\s*$/.test(cleaned[cleaned.length - 1])) {
-    cleaned.pop();
-  }
-
-  const subject = cleaned[0] ?? "";
-  const second = cleaned[1] ?? "";
+  const { subject, second } = findSubjectAndSecond(message);
   const scope = subject.split(":")[0];
 
   if (subject === "") {
@@ -125,7 +175,7 @@ export default function checkCommitMessage(message) {
 
 // --- command line ----------------------------------------------------------
 
-function main() {
+async function main() {
   const self = fileURLToPath(import.meta.url);
   const progName = basename(self);
   const skillDir = resolve(dirname(self), "..");
@@ -139,8 +189,8 @@ FILE is a commit message file (as passed to Git's commit-msg hook).
 When FILE is omitted or is "-", the message is read from standard input.
 
 Options:
-  -q, --quiet   suppress the success message
-  -h, --help    show this help
+  -v, --verbose  print the success message
+  -h, --help     show this help
 
 Exit status:
   0  no errors (warnings may still have been printed)
@@ -156,15 +206,15 @@ The checker enforces only portable Scoped Commits rules. Project-specific
 rules (valid scope vocabulary, description casing) belong in project tooling.
 `;
 
-  let quiet = false;
+  let verbose = false;
   let file = 0;
 
   // Exit through one helper so every terminating path writes to the right
   // stream and exits with the right status.
-  //   prefix: emit "PROGNAME: " before the message (default true)
-  //   quiet:  allow --quiet to suppress the message (default true)
-  const die = (exitStatus, message = "", { prefix = true, quiet: allowQuiet = true } = {}) => {
-    if (exitStatus === 0 && allowQuiet && quiet) {
+  //   prefix:  emit "PROGNAME: " before the message (default true)
+  //   verbose: show the success message (default: the --verbose flag)
+  const die = (exitStatus, message = "", { prefix = true, verbose: allowVerbose = verbose } = {}) => {
+    if (exitStatus === 0 && !allowVerbose) {
       message = "";
     }
     if (message !== "") {
@@ -185,10 +235,10 @@ rules (valid scope vocabulary, description casing) belong in project tooling.
 
   for (let i = 2; i < process.argv.length; i += 1) {
     const arg = process.argv[i];
-    if (arg === "-q" || arg === "--quiet") {
-      quiet = true;
+    if (arg === "-v" || arg === "--verbose") {
+      verbose = true;
     } else if (arg === "-h" || arg === "--help") {
-      die(0, usage, { prefix: false, quiet: false });
+      die(0, usage, { prefix: false, verbose: true });
     } else if (arg === "--") {
       if (i + 1 < process.argv.length) {
         file = fileSource(process.argv[i + 1]);
@@ -201,17 +251,17 @@ rules (valid scope vocabulary, description casing) belong in project tooling.
     }
   }
 
-  let raw;
+  const source = file === 0 ? 0 : pathToFileURL(file);
+
+  let result;
   try {
-    raw = readFileSync(file, "utf8");
+    result = await checkCommitMessage(source);
   } catch (error) {
     const message = file === 0
       ? `error: cannot read standard input: ${error.message}`
       : `error: no such file: ${file}`;
     die(2, message);
   }
-
-  const result = checkCommitMessage(raw);
 
   for (const issue of result.issues) {
     process.stderr.write(`${progName}: ${issue.severity}: ${issue.message}\n`);
@@ -227,5 +277,5 @@ rules (valid scope vocabulary, description casing) belong in project tooling.
 }
 
 if (import.meta.main) {
-  main();
+  await main();
 }
