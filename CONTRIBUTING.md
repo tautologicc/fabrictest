@@ -1,5 +1,13 @@
 # Contributing
 
+## Setup
+
+This repository uses direnv to configure its development environment.
+You MUST install direnv and run `direnv allow`
+from the repository root.
+Until you do, the environment is inactive,
+including the git hooks under `.githooks`.
+
 ## Commits
 
 This project follows the Scoped Commits convention.
