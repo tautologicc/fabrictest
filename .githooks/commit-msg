@@ -1,0 +1,3 @@
+#!/bin/sh -eu
+repo_root=$(git rev-parse --show-toplevel)
+"$repo_root"/.pi/skills/scopedcommits/scripts/check-commit-message.mjs "$@"
