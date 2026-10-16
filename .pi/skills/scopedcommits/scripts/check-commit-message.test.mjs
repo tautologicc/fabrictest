@@ -6,27 +6,30 @@
 //   - CLI: spawned-process tests for argv, stdin/file input, output, exit codes
 
 import { after, before, describe, it } from "node:test";
-import { spawnSync } from "node:child_process";
-import {
-  accessSync,
-  closeSync,
-  constants,
-  mkdtempSync,
-  openSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { constants } from "node:fs";
+import { access, mkdtemp, open, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { text } from "node:stream/consumers";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import checkCommitMessage from "./check-commit-message.mjs";
 
-const CHECKER = join(dirname(fileURLToPath(import.meta.url)), "check-commit-message.mjs");
+const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "check-commit-message.mjs");
 
 /** Run the CLI as a process and capture exactly what a git hook sees. */
-const run = (args, input = "") =>
-  spawnSync(process.execPath, [CHECKER, ...args], { input, encoding: "utf8" });
+const run = async (args, input = "") => {
+  const child = spawn(process.execPath, [SCRIPT, ...args]);
+  child.stdin.end(input);
+  const [[status], stdout, stderr] = await Promise.all([
+    once(child, "close"),
+    text(child.stdout),
+    text(child.stderr),
+  ]);
+  return { status, stdout, stderr };
+};
 
 describe("library: checkCommitMessage()", () => {
   describe("accepted subjects", () => {
@@ -224,17 +227,17 @@ describe("library: checkCommitMessage()", () => {
   describe("input types", () => {
     let dir;
 
-    before(() => {
-      dir = mkdtempSync(join(tmpdir(), "scopedcommits-input-"));
+    before(async () => {
+      dir = await mkdtemp(join(tmpdir(), "scopedcommits-input-"));
     });
 
-    after(() => {
-      rmSync(dir, { recursive: true, force: true });
+    after(async () => {
+      await rm(dir, { recursive: true, force: true });
     });
 
     it("reads a file: URL", async (t) => {
       const path = join(dir, "URL_MSG");
-      writeFileSync(path, "auth: from a URL\n");
+      await writeFile(path, "auth: from a URL\n");
       const result = await checkCommitMessage(pathToFileURL(path));
       t.assert.equal(result.ok, true);
       t.assert.equal(result.subject, "auth: from a URL");
@@ -249,13 +252,13 @@ describe("library: checkCommitMessage()", () => {
 
     it("reads a file descriptor", async (t) => {
       const path = join(dir, "FD_MSG");
-      writeFileSync(path, "auth: from a descriptor\n");
-      const fd = openSync(path, "r");
+      await writeFile(path, "auth: from a descriptor\n");
+      const handle = await open(path, "r");
       try {
-        const result = await checkCommitMessage(fd);
+        const result = await checkCommitMessage(handle.fd);
         t.assert.equal(result.ok, true);
       } finally {
-        closeSync(fd);
+        await handle.close();
       }
     });
 
@@ -340,28 +343,28 @@ describe("library: checkCommitMessage()", () => {
 
 describe("CLI: check-commit-message.mjs", () => {
   describe("default output", () => {
-    it("is silent on success", (t) => {
-      const result = run(["-"], "auth: fix login");
+    it("is silent on success", async (t) => {
+      const result = await run(["-"], "auth: fix login");
       t.assert.equal(result.status, 0);
       t.assert.equal(result.stdout, "");
       t.assert.equal(result.stderr, "");
     });
 
-    it("is silent for special commits", (t) => {
-      const result = run(["-"], 'Revert "auth: fix login"');
+    it("is silent for special commits", async (t) => {
+      const result = await run(["-"], 'Revert "auth: fix login"');
       t.assert.equal(result.status, 0);
       t.assert.equal(result.stdout, "");
     });
 
-    it("still prints warnings", (t) => {
-      const result = run(["-"], "auth : fix login");
+    it("still prints warnings", async (t) => {
+      const result = await run(["-"], "auth : fix login");
       t.assert.equal(result.status, 0);
       t.assert.equal(result.stdout, "");
       t.assert.match(result.stderr, /warning: scope "auth " has leading or trailing whitespace/);
     });
 
-    it("still prints errors", (t) => {
-      const result = run(["-"], "fix(auth): nope");
+    it("still prints errors", async (t) => {
+      const result = await run(["-"], "fix(auth): nope");
       t.assert.equal(result.status, 1);
       t.assert.equal(result.stdout, "");
       t.assert.match(result.stderr, /error: Conventional Commits type prefix/);
@@ -370,100 +373,100 @@ describe("CLI: check-commit-message.mjs", () => {
   });
 
   describe("--verbose", () => {
-    it("prints the success message", (t) => {
-      const result = run(["-v", "-"], "auth: fix the thing\n");
+    it("prints the success message", async (t) => {
+      const result = await run(["-v", "-"], "auth: fix the thing\n");
       t.assert.equal(result.status, 0);
       t.assert.match(result.stdout, /^check-commit-message\.mjs: ok: auth: fix the thing$/m);
       t.assert.equal(result.stderr, "");
     });
 
-    it("announces a skipped special commit", (t) => {
-      const result = run(["--verbose", "-"], 'Revert "auth: fix login"\n');
+    it("announces a skipped special commit", async (t) => {
+      const result = await run(["--verbose", "-"], 'Revert "auth: fix login"\n');
       t.assert.equal(result.status, 0);
       t.assert.match(result.stdout, /ok \(special commit, skipped\)/);
     });
 
-    it("does not hide warnings or errors", (t) => {
-      const warned = run(["-v", "-"], "auth : fix login");
+    it("does not hide warnings or errors", async (t) => {
+      const warned = await run(["-v", "-"], "auth : fix login");
       t.assert.equal(warned.status, 0);
       t.assert.match(warned.stderr, /warning: scope/);
 
-      const failed = run(["-v", "-"], "fix(auth): nope");
+      const failed = await run(["-v", "-"], "fix(auth): nope");
       t.assert.equal(failed.status, 1);
       t.assert.match(failed.stderr, /error: Conventional Commits type prefix/);
     });
   });
 
   describe("arguments", () => {
-    it("prints usage with --help", (t) => {
-      const result = run(["--help"]);
+    it("prints usage with --help", async (t) => {
+      const result = await run(["--help"]);
       t.assert.equal(result.status, 0);
       t.assert.match(result.stdout, /Usage:/);
       t.assert.match(result.stdout, /Scoped Commits convention/);
       t.assert.equal(result.stderr, "");
     });
 
-    it("fails on an unknown option", (t) => {
-      const result = run(["--bogus"]);
+    it("fails on an unknown option", async (t) => {
+      const result = await run(["--bogus"]);
       t.assert.equal(result.status, 2);
       t.assert.match(result.stderr, /unknown option: --bogus/);
       t.assert.match(result.stderr, /Usage:/);
     });
 
-    it("fails on a missing file", (t) => {
-      const result = run([join(tmpdir(), `scopedcommits-missing-${process.pid}`)]);
+    it("fails on a missing file", async (t) => {
+      const result = await run([join(tmpdir(), `scopedcommits-missing-${process.pid}`)]);
       t.assert.equal(result.status, 2);
       t.assert.match(result.stderr, /no such file/);
     });
 
-    it("fails when the argument is a directory", (t) => {
-      const result = run([tmpdir()]);
+    it("fails when the argument is a directory", async (t) => {
+      const result = await run([tmpdir()]);
       t.assert.equal(result.status, 2);
       t.assert.match(result.stderr, /no such file/);
     });
 
-    it("is executable so hooks can call it directly", (t) => {
-      t.assert.doesNotThrow(() => accessSync(CHECKER, constants.X_OK));
+    it("is executable so hooks can call it directly", async (t) => {
+      await t.assert.doesNotReject(() => access(SCRIPT, constants.X_OK));
     });
   });
 
   describe("input sources", () => {
     let dir;
 
-    before(() => {
-      dir = mkdtempSync(join(tmpdir(), "scopedcommits-cli-"));
+    before(async () => {
+      dir = await mkdtemp(join(tmpdir(), "scopedcommits-cli-"));
     });
 
-    after(() => {
-      rmSync(dir, { recursive: true, force: true });
+    after(async () => {
+      await rm(dir, { recursive: true, force: true });
     });
 
-    it("reads the message from stdin when FILE is omitted", (t) => {
-      t.assert.equal(run([], "auth: from stdin").status, 0);
+    it("reads the message from stdin when FILE is omitted", async (t) => {
+      t.assert.equal((await run([], "auth: from stdin")).status, 0);
     });
 
-    it("reads the message from stdin for '-'", (t) => {
-      t.assert.equal(run(["-"], "auth: from stdin").status, 0);
+    it("reads the message from stdin for '-'", async (t) => {
+      t.assert.equal((await run(["-"], "auth: from stdin")).status, 0);
     });
 
-    it("reads a message file passed as FILE", (t) => {
+    it("reads a message file passed as FILE", async (t) => {
       const file = join(dir, "COMMIT_EDITMSG");
-      writeFileSync(file, "auth: from a file\n");
-      t.assert.equal(run([file]).status, 0);
+      await writeFile(file, "auth: from a file\n");
+      t.assert.equal((await run([file])).status, 0);
     });
 
-    it("reads a message file after --", (t) => {
+    it("reads a message file after --", async (t) => {
       const file = join(dir, "AFTER_DASH_DASH");
-      writeFileSync(file, "auth: after --\n");
-      t.assert.equal(run(["--", file]).status, 0);
+      await writeFile(file, "auth: after --\n");
+      t.assert.equal((await run(["--", file])).status, 0);
     });
 
-    it("treats stdin and file input identically", (t) => {
+    it("treats stdin and file input identically", async (t) => {
       const message = "auth: same either way\n\nWith a body.\n";
       const file = join(dir, "SAME");
-      writeFileSync(file, message);
-      const fromStdin = run(["-"], message);
-      const fromFile = run([file]);
+      await writeFile(file, message);
+      const fromStdin = await run(["-"], message);
+      const fromFile = await run([file]);
       t.assert.deepEqual(
         { status: fromFile.status, stdout: fromFile.stdout, stderr: fromFile.stderr },
         { status: fromStdin.status, stdout: fromStdin.stdout, stderr: fromStdin.stderr },
