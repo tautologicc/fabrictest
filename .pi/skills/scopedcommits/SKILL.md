@@ -58,6 +58,7 @@ The _type_ of a change is a poor substitute:
   which deprioritizes the one field readers actually need.
 
 > [!IMPORTANT]
+>
 > Language models default to Conventional Commits
 > far more often than not.
 > Treat `fix: ...`, `feat(scope): ...`, and their cousins
