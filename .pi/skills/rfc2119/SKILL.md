@@ -50,6 +50,7 @@ flowchart TD
 | "MAY" / "OPTIONAL"               | Use own judgment, no explanation needed    |
 
 > [!TIP]
+>
 > "MAY" is genuinely optional
 > — no explanation needed either way.
 > "You MAY add inline comments for complex logic"
@@ -64,6 +65,7 @@ A rule is verifiable
 if compliance can be objectively determined.
 
 > [!CAUTION]
+>
 > Unverifiable rules with "MUST" create impossible situations.
 > The agent cannot confirm compliance,
 > so it ignores the rule, freezes, or rationalizes.
@@ -97,6 +99,7 @@ Examples:
   is a factual description, not a rule.
 
 > [!NOTE]
+>
 > Descriptive voice is the default failure mode
 > when authoring instructions.
 > Agents produce "the vocabulary is closed to these types"
@@ -137,6 +140,7 @@ mindmap
 ```
 
 > [!CAUTION]
+>
 > When everything is "MUST",
 > critical rules stop standing out.
 
@@ -338,6 +342,7 @@ Agents MUST NOT proceed without explicit override.
 Incomplete compliance is not compliance.
 
 > [!IMPORTANT]
+>
 > Agents MUST NOT rationalize "close enough" compliance.
 > Agents MUST halt and report that the requirement cannot be met.
 
