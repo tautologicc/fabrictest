@@ -1,0 +1,11 @@
+[core]
+    hooksPath = .githooks
+
+[commit]
+    gpgSign = true
+
+[gpg]
+    format = ssh
+
+[gpg "ssh"]
+    allowedSignersFile = .git_allowed_signers
