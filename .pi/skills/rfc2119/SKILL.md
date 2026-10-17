@@ -69,9 +69,9 @@ if compliance can be objectively determined.
 > so it ignores the rule, freezes, or rationalizes.
 
 For judgment-based guidance,
-you MUST describe principles without keywords,
-then use keywords
-for the verifiable behaviors that apply those principles.
+you MUST NOT put keywords on the judgment itself,
+and you MUST reserve keywords
+for the verifiable behaviors that apply that guidance.
 
 ## Sentence intent test
 
@@ -176,7 +176,7 @@ flowchart TD
 ```
 
 When writing rules or constraints,
-you MUST use prescriptive voice from the first draft.
+you MUST use prescriptive voice.
 The specific keyword ("MUST", "SHOULD", "MAY")
 depends on the decision test above.
 
@@ -250,12 +250,15 @@ RFC 2119 keywords work in two distinct contexts:
 | **Audience**          | The agent itself                                            |
 | **Evaluation timing** | During runtime                                              |
 
+This skill is itself an agent instruction and is intentionally MUST-heavy,
+because it defines the obligation layer rather than a workflow.
+
 **Hybrid documents:**
 some documents mix both contexts
 — a skill might include agent instructions
 and system requirements for code the agent writes.
 You MUST keep contexts separate within the document.
-Do not write "you" in a system requirement
+You MUST NOT write "you" in a system requirement
 or "the system" in an agent directive.
 
 **Worked examples:**
@@ -282,7 +285,8 @@ the system MUST validate all required fields before processing.
 <!-- Input validation — agent instruction -->
 
 You SHOULD validate user input against known constraints
-before proceeding.
+before proceeding,
+unless doing so would block reasonable user intent.
 ```
 
 Note the shift from "MUST" to "SHOULD" in input validation
@@ -291,9 +295,10 @@ where strict validation blocks reasonable user intent.
 
 ## Capitalization
 
-RFC 2119 keywords only have formal meaning in ALL CAPS.
-ALL CAPS is reserved exclusively for RFC 2119 keywords.
-Other vocabulary MUST NOT use ALL CAPS.
+RFC 2119 keywords only have formal meaning in uppercase.
+Uppercase is reserved for RFC 2119 keywords
+and the documented exemptions.
+Other vocabulary MUST NOT use uppercase.
 
 Acronyms (`CI`, `OS`),
 code identifiers (`EINVAL`),
@@ -334,7 +339,7 @@ Incomplete compliance is not compliance.
 
 > [!IMPORTANT]
 > Agents MUST NOT rationalize "close enough" compliance.
-> Halt and report that the requirement cannot be met.
+> Agents MUST halt and report that the requirement cannot be met.
 
 Agents MUST NOT proceed under ambiguity
 about requirement satisfaction.
@@ -344,7 +349,7 @@ you MUST halt and ask which pattern to follow.
 **Scope conflicts:**
 when requirements at different scopes conflict
 (global vs. project vs. task),
-more specific scopes override broader ones
+the more specific scope MUST override the broader one
 for "SHOULD" and "MAY" rules.
 For "MUST" and "MUST NOT" conflicts across scopes,
 you MUST treat them as unclear and halt to ask
@@ -373,7 +378,7 @@ requirementDiagram
 
     requirement prescriptive_voice {
         id: R3
-        text: Use prescriptive voice from the first draft
+        text: Use prescriptive voice
         risk: High
         verifymethod: Inspection
     }
@@ -387,7 +392,7 @@ requirementDiagram
 
     requirement caps_reserved {
         id: R5
-        text: Reserve ALL CAPS exclusively for RFC 2119 keywords
+        text: Reserve uppercase for RFC 2119 keywords and the documented exemptions
         risk: Medium
         verifymethod: Inspection
     }
@@ -430,19 +435,13 @@ requirementDiagram
         docRef: this skill
     }
 
-    element system_spec {
-        type: artifact
-        docRef: system requirements
-    }
-
     agent_prompt - satisfies -> verifiable_only
     agent_prompt - satisfies -> no_keywords_on_descriptions
     agent_prompt - satisfies -> prescriptive_voice
     agent_prompt - satisfies -> halt_on_conflict
     agent_prompt - satisfies -> no_ambiguity
     agent_prompt - satisfies -> no_close_enough
-    system_spec - satisfies -> halt_on_impossible
+    agent_prompt - satisfies -> halt_on_impossible
     skill - satisfies -> separate_contexts
     skill - satisfies -> caps_reserved
-    skill - satisfies -> halt_on_conflict
 ```
