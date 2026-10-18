@@ -441,15 +441,19 @@ scripts/check-commit-message.mjs .git/COMMIT_EDITMSG
 # stdin
 printf '%s' 'auth: fix login' | scripts/check-commit-message.mjs -
 
-# a range
-scripts/check-commit-messages.mjs -- main..HEAD
+# unpushed commits: upstream if configured, otherwise commits not on a remote
+scripts/check-commit-messages.mjs
 
-# committed but not pushed (as used by git.just)
-scripts/check-commit-messages.mjs -- HEAD --not --remotes
+# an explicit range
+scripts/check-commit-messages.mjs -- main..HEAD
 
 # commit-msg hook; call the script rather than symlinking it
 "<skill-dir>/scripts/check-commit-message.mjs" "$1" >/dev/null
 ```
+
+With no range argument, `check-commit-messages.mjs` checks
+`@{upstream}..HEAD` when the current branch has an upstream, otherwise
+`HEAD --not --remotes`. A range argument overrides that default.
 
 Exit 0 means success, 1 failure, 2 for invalid options.
 There is no help flag; misuse reports the error. Usage lives in these

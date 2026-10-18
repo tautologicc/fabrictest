@@ -95,6 +95,38 @@ describe("CLI: check-commit-messages.mjs", () => {
     t.assert.match(result.stderr, new RegExp(authHash));
   });
 
+  it("defaults to the upstream range", async (t) => {
+    await execFile("git", ["branch", "base", "HEAD~2"], { cwd: dir, env });
+    await execFile("git", ["branch", "--set-upstream-to=base"], { cwd: dir, env });
+    try {
+      const result = await run([], { cwd: dir, env });
+      t.assert.equal(result.status, 1);
+      t.assert.match(result.stderr, /Conventional Commits type prefix/);
+      t.assert.ok(!/unknown scope "auth"/.test(result.stderr));
+    } finally {
+      await execFile("git", ["branch", "--unset-upstream"], { cwd: dir, env });
+      await execFile("git", ["branch", "-D", "base"], { cwd: dir, env });
+    }
+  });
+
+  it("defaults to commits not on a remote", async (t) => {
+    await execFile("git", ["update-ref", "refs/remotes/origin/main", "HEAD~2"], {
+      cwd: dir,
+      env,
+    });
+    try {
+      const result = await run([], { cwd: dir, env });
+      t.assert.equal(result.status, 1);
+      t.assert.match(result.stderr, /Conventional Commits type prefix/);
+      t.assert.ok(!/unknown scope "auth"/.test(result.stderr));
+    } finally {
+      await execFile("git", ["update-ref", "-d", "refs/remotes/origin/main"], {
+        cwd: dir,
+        env,
+      });
+    }
+  });
+
   it("prints the outcome when every message is valid", async (t) => {
     const result = await run(["--", "--max-count=1", "HEAD~3"], { cwd: dir, env });
     t.assert.equal(result.status, 0);

@@ -4,12 +4,14 @@
 // Usage:
 //   check-commit-messages.mjs [--] [REV-LIST-ARG...]
 //
-// REV-LIST-ARG is passed to git rev-list; default: HEAD.
+// REV-LIST-ARG is passed to git rev-list.
+// With no REV-LIST-ARG, checks @{upstream}..HEAD when an upstream exists,
+// otherwise HEAD --not --remotes.
 // Exit: 0 valid, 1 failure, 2 usage error.
 //
 // Examples:
+//   check-commit-messages.mjs
 //   check-commit-messages.mjs -- main..HEAD
-//   check-commit-messages.mjs -- HEAD --not --remotes
 
 import { execFile as execFileCallback } from "node:child_process";
 import { parseArgs, promisify } from "node:util";
@@ -38,7 +40,20 @@ async function main() {
     allowPositionals: true,
   });
 
-  const revs = positionals.length > 0 ? positionals : ["HEAD"];
+  const revs = positionals.filter(Boolean);
+  if (revs.length === 0) {
+    let upstream = "";
+    try {
+      upstream = (await git(["rev-parse", "--abbrev-ref", "@{upstream}"])).trim();
+    } catch {
+      upstream = "";
+    }
+    if (upstream !== "") {
+      revs.push(`${upstream}..HEAD`);
+    } else {
+      revs.push("HEAD", "--not", "--remotes");
+    }
+  }
 
   let scopes;
   try {
