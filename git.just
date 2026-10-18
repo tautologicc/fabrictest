@@ -1,11 +1,12 @@
 set default-list := true
 
-# Add a public key to .git_allowed_signers and re-sign it
+# Add a public key to the allowlist and re-sign it
 add-signing-key principal keyfile: && sign-allowlist
     #!/bin/sh -eu
     log() { printf "$@"; printf '\n'; }
     die() { log "$@" >&2; exit 1; }
-    allowlist=.git_allowed_signers
+    allowlist=$(git config --path gpg.ssh.allowedSignersFile)
+    [ -n "$allowlist" ] || die 'gpg.ssh.allowedSignersFile is not configured'
     principal='{{principal}}'
     keyfile='{{keyfile}}'
     [ -n "$principal" ] || die 'principal is required'
@@ -24,13 +25,13 @@ add-signing-key principal keyfile: && sign-allowlist
     printf '%s%s %s %s\n' "$nl" "$principal" "$keytype" "$keydata" >> "$allowlist"
     log 'added %s' "$principal"
 
-# Sign .git_allowed_signers with the SSH key
+# Sign the allowlist with the SSH key
 sign-allowlist:
     #!/bin/sh -eu
-    log() { printf "$@"; printf '\n'; }
+    log() { printf "$@" ; printf '\n'; }
     die() { log "$@" >&2; exit 1; }
-    . ./.envrc
-    allowlist=.git_allowed_signers
+    allowlist=$(git config --path gpg.ssh.allowedSignersFile)
+    [ -n "$allowlist" ] || die 'gpg.ssh.allowedSignersFile is not configured'
     [ -f "$allowlist" ] || die 'missing %s' "$allowlist"
     key=$(git config --path user.signingkey)
     [ -n "$key" ] || die 'user.signingkey is not configured'
@@ -47,15 +48,15 @@ verify-signatures:
     #!/bin/sh -eu
     log() { printf "$@"; printf '\n'; }
     die() { log "$@" >&2; exit 1; }
-    . ./.envrc
-    allowlist=.git_allowed_signers
+    allowlist=$(git config --path gpg.ssh.allowedSignersFile)
+    [ -n "$allowlist" ] || die 'gpg.ssh.allowedSignersFile is not configured'
     email=$(git config user.email)
     [ -n "$email" ] || die 'user.email is not configured'
     [ -f "$allowlist" ] || die 'missing %s' "$allowlist"
     [ -f "$allowlist".sig ] ||
         die "missing %s.sig; run 'just git sign-allowlist'" "$allowlist"
     ssh-keygen -Y verify \
-        -f .git_allowed_signers \
+        -f "$allowlist" \
         -I "$email" \
         -n git \
         -s "$allowlist".sig \
