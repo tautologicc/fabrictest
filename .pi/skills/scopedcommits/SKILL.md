@@ -98,6 +98,35 @@ For SHOULD and MAY rules, repository policy outranks this skill.
 If repository policy conflicts with a MUST or a MUST NOT stated here,
 you MUST halt, report the conflict, and ask which rule to follow.
 
+The bundled validator can enforce a project's scope vocabulary when the
+repository's `CONTRIBUTING.md` starts with JSON frontmatter containing a
+`scopes` array:
+
+```markdown
+---
+{
+  "scopes": ["treewide", "git", "skills/"]
+}
+---
+```
+
+A pattern without a trailing `/` matches exactly. A pattern ending in `/`
+matches only scopes that start with it, so `skills/` matches `skills/a`
+but not `skills`. `:` and `/` are hierarchy separators, and colons are
+normalized to slashes, so `git/checks` and `git: checks` are equivalent.
+You SHOULD use the delimiter style shown in the project's `scopes` array.
+Scope matching is case-sensitive. Glob metacharacters (`*`, `?`, `[`,
+`]`, `{`, `}`) are configuration errors. No frontmatter or no `scopes` key
+means only portable rules apply. Invalid JSON, a non-object, a
+non-array, an empty array, or an empty pattern is a configuration error
+(exit 2). The CLI discovers the frontmatter in the current repository
+root; run it from the repository being checked. The library takes an
+explicit `scopes` array and rejects empty or glob-like patterns. A
+description containing `: ` is treated as a deeper scope; combining that
+with comma-separated scopes is rejected as ambiguous. The companion
+`check-commit-messages.mjs` runs `git rev-list` over a range and checks
+each message with the same allowlist.
+
 ## The format
 
 ```text
@@ -405,47 +434,29 @@ flowchart LR
 
 ## Validation
 
-This skill bundles `scripts/check-commit-message.mjs`
-(relative to this skill directory).
-You SHOULD run it before writing or approving a commit,
-unless the commit is a special commit.
-
 ```sh
-scripts/check-commit-message.mjs path/to/COMMIT_EDITMSG
+# one message file
+scripts/check-commit-message.mjs .git/COMMIT_EDITMSG
 
-# or explicitly through Node
-node scripts/check-commit-message.mjs path/to/COMMIT_EDITMSG
+# stdin
+printf '%s' 'auth: fix login' | scripts/check-commit-message.mjs -
 
-# or from standard input
-printf '%s' 'auth: prevent token refresh from racing expiry' \
-  | scripts/check-commit-message.mjs -
+# a range
+scripts/check-commit-messages.mjs -- main..HEAD
+
+# committed but not pushed (as used by git.just)
+scripts/check-commit-messages.mjs -- HEAD --not --remotes
+
+# commit-msg hook; call the script rather than symlinking it
+"<skill-dir>/scripts/check-commit-message.mjs" "$1" >/dev/null
 ```
 
-The checker validates the format,
-detects Conventional Commits prefixes,
-flags ticket-like scopes and missing blank lines,
-and warns about overlong subjects.
-Exit status 0 means the message is valid;
-1 means it violates the format;
-warnings alone never fail.
+Exit 0 means success, 1 failure, 2 for invalid options.
+There is no help flag; misuse reports the error. Usage lives in these
+examples and at the top of each script.
 
-To enforce the format mechanically,
-you MAY call the checker from a `commit-msg` hook
-(Git passes the message file path as the hook argument):
-
-```sh
-"<skill-dir>/scripts/check-commit-message.mjs" "$1"
-```
-
-Call the checker from the hook rather than symlinking it as the hook itself,
-so the hook can run other checks alongside it;
-`--help` prints this command with the script's location resolved.
-
-The checker only enforces portable Scoped Commits rules.
-You SHOULD put project-specific rules
-(valid scope vocabulary, description casing)
-in the project's own docs and tooling,
-unless the project already records them elsewhere.
+The checker loads the project scope allowlist from the JSON frontmatter in
+`CONTRIBUTING.md` when present; otherwise only portable rules apply.
 
 ## Examples
 
@@ -575,8 +586,13 @@ requirementDiagram
 ```
 
 The bundled checker verifies R1, R2, R5, and R8,
-and warns about subject length.
-R3, R4, R6, R7, R9, R10, and R11 are review obligations.
+flags ticket-like scopes, and warns about subject length.
+When the project provides a `scopes` array,
+it also enforces vocabulary membership (R6);
+whether the chosen scope is the best reuse remains review.
+R3 is partly mechanical: ticket-like scopes are flagged,
+and unknown file or change-kind scopes fail the allowlist.
+R4, R7, R9, R10, and R11 remain review obligations.
 
 ## Sources
 

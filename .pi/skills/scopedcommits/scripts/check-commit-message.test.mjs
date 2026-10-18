@@ -9,19 +9,30 @@ import { after, before, describe, it } from "node:test";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { constants } from "node:fs";
-import { access, mkdtemp, open, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, open, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { text } from "node:stream/consumers";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import checkCommitMessage from "./check-commit-message.mjs";
+import checkCommitMessage, { parseScopes } from "./check-commit-message.mjs";
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "check-commit-message.mjs");
 
+// Run the CLI in a directory without a CONTRIBUTING.md by default so the
+// host repository's scope allowlist does not affect the portable tests.
+let portableCwd;
+before(async () => {
+  portableCwd = await mkdtemp(join(tmpdir(), "scopedcommits-cwd-"));
+  await mkdir(join(portableCwd, ".git"));
+});
+after(async () => {
+  await rm(portableCwd, { recursive: true, force: true });
+});
+
 /** Run the CLI as a process and capture exactly what a git hook sees. */
-const run = async (args, input = "") => {
-  const child = spawn(process.execPath, [SCRIPT, ...args]);
+const run = async (args, input = "", { cwd = portableCwd } = {}) => {
+  const child = spawn(process.execPath, [SCRIPT, ...args], { cwd });
   child.stdin.end(input);
   const [[status], stdout, stderr] = await Promise.all([
     once(child, "close"),
@@ -29,6 +40,21 @@ const run = async (args, input = "") => {
     text(child.stderr),
   ]);
   return { status, stdout, stderr };
+};
+
+const hasAncestorGit = async (start) => {
+  let dir = start;
+  while (true) {
+    try {
+      await access(join(dir, ".git"));
+      return true;
+    } catch {
+      // keep walking
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return false;
+    dir = parent;
+  }
 };
 
 describe("library: checkCommitMessage()", () => {
@@ -341,29 +367,339 @@ describe("library: checkCommitMessage()", () => {
   });
 });
 
+describe("scope allowlist", () => {
+  it("accepts an exact scope", async (t) => {
+    const result = await checkCommitMessage("git: fix the thing", { scopes: ["git"] });
+    t.assert.equal(result.ok, true);
+    t.assert.deepEqual(result.issues, []);
+  });
+
+  it("rejects an unknown scope", async (t) => {
+    const result = await checkCommitMessage("auth: fix login", { scopes: ["git"] });
+    t.assert.equal(result.ok, false);
+    t.assert.match(result.issues[0].message, /unknown scope "auth"/);
+  });
+
+  it("matches exact scopes and trailing-slash prefixes", async (t) => {
+    const exact = await checkCommitMessage("git: fix", { scopes: ["git"] });
+    t.assert.equal(exact.ok, true);
+
+    const noChild = await checkCommitMessage("git/checks: update", { scopes: ["git"] });
+    t.assert.equal(noChild.ok, false);
+
+    const prefix = await checkCommitMessage("git/checks: update", { scopes: ["git/"] });
+    t.assert.equal(prefix.ok, true);
+
+    const deep = await checkCommitMessage("git/checks/deep: update", { scopes: ["git/"] });
+    t.assert.equal(deep.ok, true);
+
+    const exactChild = await checkCommitMessage("git/checks: update", {
+      scopes: ["git/checks"],
+    });
+    t.assert.equal(exactChild.ok, true);
+
+    const childPrefix = await checkCommitMessage("git/checks: update", {
+      scopes: ["git/checks/"],
+    });
+    t.assert.equal(childPrefix.ok, false);
+  });
+
+  it("normalizes colons to slashes", async (t) => {
+    for (const subject of ["i2c: virtio: mark device ready", "i2c/virtio: mark device ready"]) {
+      const prefixed = await checkCommitMessage(subject, { scopes: ["i2c/"] });
+      t.assert.equal(prefixed.ok, true);
+
+      const exact = await checkCommitMessage(subject, { scopes: ["i2c"] });
+      t.assert.equal(exact.ok, false);
+    }
+  });
+
+  it("lets a trailing slash cover colon children", async (t) => {
+    for (const subject of ["git/checks: update", "git: checks: update"]) {
+      const prefixed = await checkCommitMessage(subject, { scopes: ["git/"] });
+      t.assert.equal(prefixed.ok, true);
+
+      const exact = await checkCommitMessage(subject, { scopes: ["git"] });
+      t.assert.equal(exact.ok, false);
+    }
+  });
+
+  it("does not let a bare scope cover children", async (t) => {
+    for (const subject of ["git: checks: update", "git/checks: update"]) {
+      const direct = await checkCommitMessage(subject, { scopes: ["git"] });
+      t.assert.equal(direct.ok, false);
+
+      const child = await checkCommitMessage(subject, { scopes: ["git/"] });
+      t.assert.equal(child.ok, true);
+    }
+  });
+
+  it("matches every skill through the skills/ prefix", async (t) => {
+    for (const subject of [
+      "skills/scopedcommits: x",
+      "skills: scopedcommits: x",
+      "skills/a/b: x",
+      "skills: a: b: x",
+    ]) {
+      const result = await checkCommitMessage(subject, { scopes: ["skills/"] });
+      t.assert.equal(result.ok, true);
+    }
+
+    const missingChild = await checkCommitMessage("skills: x", { scopes: ["skills/"] });
+    t.assert.equal(missingChild.ok, false);
+
+    const exact = await checkCommitMessage("skills: x", { scopes: ["skills"] });
+    t.assert.equal(exact.ok, true);
+  });
+
+  it("validates each comma-separated scope", async (t) => {
+    const both = await checkCommitMessage("api, worker: stop retries", {
+      scopes: ["api", "worker"],
+    });
+    t.assert.equal(both.ok, true);
+
+    const result = await checkCommitMessage("api, worker: stop retries", { scopes: ["api"] });
+    t.assert.equal(result.ok, false);
+    t.assert.match(result.issues[0].message, /unknown scope "worker"/);
+  });
+
+  it("ignores the ticket parenthetical", async (t) => {
+    const result = await checkCommitMessage("auth (PROJ-123): fix login", { scopes: ["auth"] });
+    t.assert.equal(result.ok, true);
+    t.assert.deepEqual(result.issues, []);
+  });
+
+  it("trims before stripping the ticket parenthetical", async (t) => {
+    for (const subject of ["api (PROJ-1) , worker: fix", "api (PROJ-1) : fix"]) {
+      const result = await checkCommitMessage(subject, { scopes: ["api", "worker"] });
+      t.assert.equal(result.ok, true);
+    }
+  });
+
+  it("keeps commas inside a ticket parenthetical", async (t) => {
+    const result = await checkCommitMessage("api (PROJ-1, PROJ-2): fix", { scopes: ["api"] });
+    t.assert.equal(result.ok, true);
+    t.assert.deepEqual(result.issues, []);
+  });
+
+  it("treats a description colon as scope hierarchy", async (t) => {
+    const bare = await checkCommitMessage("auth: fix: handle timeout", { scopes: ["auth"] });
+    t.assert.equal(bare.ok, false);
+    t.assert.match(bare.issues[0].message, /unknown scope "auth: fix"/);
+
+    const prefix = await checkCommitMessage("auth: fix: handle timeout", { scopes: ["auth/"] });
+    t.assert.equal(prefix.ok, true);
+  });
+
+  it("reports an ambiguous description comma", async (t) => {
+    const result = await checkCommitMessage("git: fix parsing, quoting: drop legacy", {
+      scopes: ["git"],
+    });
+    t.assert.equal(result.ok, false);
+    t.assert.equal(result.issues.length, 1);
+    t.assert.match(result.issues[0].message, /ambiguous scope/);
+  });
+
+  it("ignores a colon inside a parenthetical", async (t) => {
+    const result = await checkCommitMessage("api (see: notes), worker: fix", {
+      scopes: ["api", "worker"],
+    });
+    t.assert.equal(result.ok, true);
+    t.assert.deepEqual(result.issues, []);
+  });
+
+  it("rejects empty scope parts", async (t) => {
+    for (const subject of [",: fix", " : fix", "api,,worker: fix", "api, worker,: fix"]) {
+      const result = await checkCommitMessage(subject, { scopes: ["api", "worker"] });
+      t.assert.equal(result.ok, false);
+      t.assert.ok(result.issues.some((issue) => /empty scope in scope list/.test(issue.message)));
+    }
+  });
+
+  it("flags comma-separated ticket-like scopes without an allowlist", async (t) => {
+    for (const subject of [
+      "api, PROJ-123: fix",
+      "PROJ-123, api: fix",
+      "api, #42: fix",
+      "PROJ-123: fix: detail",
+      "#42: fix: detail",
+    ]) {
+      const result = await checkCommitMessage(subject);
+      t.assert.equal(result.ok, false);
+      t.assert.match(result.issues[0].message, /ticket-like scope/);
+    }
+  });
+
+  it("flags ticket segments inside a hierarchy", async (t) => {
+    for (const subject of [
+      "api/PROJ-123: fix",
+      "api: PROJ-123: fix",
+      "skills/PROJ-1: x",
+    ]) {
+      const result = await checkCommitMessage(subject, {
+        scopes: ["api/", "skills/"],
+      });
+      t.assert.equal(result.ok, false);
+      t.assert.equal(result.issues.length, 1);
+      t.assert.match(result.issues[0].message, /ticket-like scope/);
+    }
+  });
+
+  it("is case-sensitive", async (t) => {
+    const result = await checkCommitMessage("Git: fix", { scopes: ["git"] });
+    t.assert.equal(result.ok, false);
+  });
+
+  it("skips special commits", async (t) => {
+    const result = await checkCommitMessage('Merge branch "main"', { scopes: ["git"] });
+    t.assert.equal(result.ok, true);
+    t.assert.equal(result.special, true);
+    t.assert.deepEqual(result.issues, []);
+  });
+
+  it("does not duplicate Conventional Commits or ticket errors", async (t) => {
+    const cc = await checkCommitMessage("fix(auth): nope", { scopes: ["git"] });
+    t.assert.equal(cc.ok, false);
+    t.assert.equal(cc.issues.length, 1);
+    t.assert.match(cc.issues[0].message, /Conventional Commits type prefix/);
+
+    const ticket = await checkCommitMessage("PROJ-123: fix", { scopes: ["git"] });
+    t.assert.equal(ticket.ok, false);
+    t.assert.equal(ticket.issues.length, 1);
+    t.assert.match(ticket.issues[0].message, /ticket-like scope/);
+  });
+
+  it("rejects empty or glob patterns", async (t) => {
+    await t.assert.rejects(() => checkCommitMessage("git: fix", { scopes: [] }), TypeError);
+    await t.assert.rejects(() => checkCommitMessage("git: fix", { scopes: [""] }), TypeError);
+    await t.assert.rejects(
+      () => checkCommitMessage("git: fix", { scopes: ["skills/*"] }),
+      TypeError,
+    );
+  });
+
+  it("rejects a non-array scopes option", async (t) => {
+    await t.assert.rejects(() => checkCommitMessage("git: x", { scopes: "git" }), TypeError);
+  });
+
+  it("accepts a null options object", async (t) => {
+    const result = await checkCommitMessage("git: x", null);
+    t.assert.equal(result.ok, true);
+  });
+});
+
+describe("parseScopes()", () => {
+  const frontmatter = (value) => `---\n${value}\n---\n\n# Contributing\n`;
+
+  it("extracts the scopes array", (t) => {
+    t.assert.deepEqual(parseScopes(frontmatter('{"scopes":["treewide","git","skills/"]}')), [
+      "treewide",
+      "git",
+      "skills/",
+    ]);
+  });
+
+  it("accepts other frontmatter keys", (t) => {
+    const markdown = frontmatter('{"title":"Contributing","scopes":["git"]}');
+    t.assert.deepEqual(parseScopes(markdown), ["git"]);
+  });
+
+  it("handles CRLF and a BOM", (t) => {
+    const markdown = `\uFEFF---\r\n{"scopes":["git"]}\r\n---\r\n`;
+    t.assert.deepEqual(parseScopes(markdown), ["git"]);
+  });
+
+  it("accepts trailing whitespace on the closing delimiter", (t) => {
+    t.assert.deepEqual(parseScopes('---\n{"scopes":["git"]}\n--- \n'), ["git"]);
+  });
+
+  it("accepts a blank line before the frontmatter", (t) => {
+    t.assert.deepEqual(parseScopes('\n---\n{"scopes":["git"]}\n---\n'), ["git"]);
+  });
+
+  it("returns null for an empty frontmatter body", (t) => {
+    t.assert.equal(parseScopes("---\n---\n"), null);
+  });
+
+  it("ignores YAML frontmatter", (t) => {
+    t.assert.equal(parseScopes("---\ntitle: Contributing\n---\n"), null);
+  });
+
+  it("ignores a leading thematic break", (t) => {
+    t.assert.equal(parseScopes("---\n\n# Contributing\n"), null);
+  });
+
+  it("rejects non-object frontmatter", (t) => {
+    t.assert.throws(() => parseScopes(frontmatter('["git"]')), /JSON object/);
+  });
+
+  it("rejects unterminated frontmatter", (t) => {
+    t.assert.throws(() => parseScopes('---\n{"scopes":["git"]}\n'), /unterminated/);
+  });
+
+  it("rejects glob metacharacters", (t) => {
+    t.assert.throws(
+      () => parseScopes(frontmatter('{"scopes":["skills/*"]}')),
+      /glob metacharacters/,
+    );
+  });
+
+  it("returns null without frontmatter", (t) => {
+    t.assert.equal(parseScopes("# Contributing\n"), null);
+  });
+
+  it("returns null when the frontmatter has no scopes", (t) => {
+    t.assert.equal(parseScopes(frontmatter('{"title":"Contributing"}')), null);
+  });
+
+  it("rejects invalid JSON", (t) => {
+    t.assert.throws(() => parseScopes(frontmatter('{"scopes":["git"]')), /invalid JSON/);
+  });
+
+  it("rejects a non-array scopes value", (t) => {
+    t.assert.throws(() => parseScopes(frontmatter('{"scopes":"git"}')), /array of strings/);
+  });
+
+  it("rejects non-string scopes", (t) => {
+    t.assert.throws(
+      () => parseScopes(frontmatter('{"scopes":["git",42]}')),
+      /array of strings/,
+    );
+  });
+
+  it("rejects an empty scopes array", (t) => {
+    t.assert.throws(() => parseScopes(frontmatter('{"scopes":[]}')), /empty/);
+  });
+
+  it("rejects an empty pattern", (t) => {
+    t.assert.throws(() => parseScopes(frontmatter('{"scopes":[""]}')), /empty patterns/);
+  });
+});
+
 describe("CLI: check-commit-message.mjs", () => {
   describe("default output", () => {
-    it("is silent on success", async (t) => {
+    it("prints the outcome on success", async (t) => {
       const result = await run(["-"], "auth: fix login");
       t.assert.equal(result.status, 0);
-      t.assert.equal(result.stdout, "");
+      t.assert.match(result.stdout, /^ok: auth: fix login$/m);
       t.assert.equal(result.stderr, "");
     });
 
-    it("is silent for special commits", async (t) => {
+    it("prints the outcome for special commits", async (t) => {
       const result = await run(["-"], 'Revert "auth: fix login"');
       t.assert.equal(result.status, 0);
-      t.assert.equal(result.stdout, "");
+      t.assert.match(result.stdout, /ok \(special commit, skipped\): Revert/);
+      t.assert.equal(result.stderr, "");
     });
 
-    it("still prints warnings", async (t) => {
+    it("prints warnings and the outcome", async (t) => {
       const result = await run(["-"], "auth : fix login");
       t.assert.equal(result.status, 0);
-      t.assert.equal(result.stdout, "");
-      t.assert.match(result.stderr, /warning: scope "auth " has leading or trailing whitespace/);
+      t.assert.match(result.stdout, /ok: auth : fix login/);
+      t.assert.match(result.stderr, /warning: scope "auth" has leading or trailing whitespace/);
     });
 
-    it("still prints errors", async (t) => {
+    it("prints errors and the failure outcome to stderr", async (t) => {
       const result = await run(["-"], "fix(auth): nope");
       t.assert.equal(result.status, 1);
       t.assert.equal(result.stdout, "");
@@ -372,56 +708,29 @@ describe("CLI: check-commit-message.mjs", () => {
     });
   });
 
-  describe("--verbose", () => {
-    it("prints the success message", async (t) => {
-      const result = await run(["-v", "-"], "auth: fix the thing\n");
-      t.assert.equal(result.status, 0);
-      t.assert.match(result.stdout, /^check-commit-message\.mjs: ok: auth: fix the thing$/m);
-      t.assert.equal(result.stderr, "");
-    });
-
-    it("announces a skipped special commit", async (t) => {
-      const result = await run(["--verbose", "-"], 'Revert "auth: fix login"\n');
-      t.assert.equal(result.status, 0);
-      t.assert.match(result.stdout, /ok \(special commit, skipped\)/);
-    });
-
-    it("does not hide warnings or errors", async (t) => {
-      const warned = await run(["-v", "-"], "auth : fix login");
-      t.assert.equal(warned.status, 0);
-      t.assert.match(warned.stderr, /warning: scope/);
-
-      const failed = await run(["-v", "-"], "fix(auth): nope");
-      t.assert.equal(failed.status, 1);
-      t.assert.match(failed.stderr, /error: Conventional Commits type prefix/);
-    });
-  });
-
   describe("arguments", () => {
-    it("prints usage with --help", async (t) => {
-      const result = await run(["--help"]);
-      t.assert.equal(result.status, 0);
-      t.assert.match(result.stdout, /Usage:/);
-      t.assert.match(result.stdout, /Scoped Commits convention/);
-      t.assert.equal(result.stderr, "");
+    it("rejects -h", async (t) => {
+      const result = await run(["-h"]);
+      t.assert.equal(result.status, 2);
+      t.assert.match(result.stderr, /Unknown option '-h'/);
+      t.assert.equal(result.stdout, "");
     });
 
     it("fails on an unknown option", async (t) => {
       const result = await run(["--bogus"]);
       t.assert.equal(result.status, 2);
-      t.assert.match(result.stderr, /unknown option: --bogus/);
-      t.assert.match(result.stderr, /Usage:/);
+      t.assert.match(result.stderr, /Unknown option '--bogus'/);
     });
 
     it("fails on a missing file", async (t) => {
       const result = await run([join(tmpdir(), `scopedcommits-missing-${process.pid}`)]);
-      t.assert.equal(result.status, 2);
+      t.assert.equal(result.status, 1);
       t.assert.match(result.stderr, /no such file/);
     });
 
     it("fails when the argument is a directory", async (t) => {
       const result = await run([tmpdir()]);
-      t.assert.equal(result.status, 2);
+      t.assert.equal(result.status, 1);
       t.assert.match(result.stderr, /no such file/);
     });
 
@@ -442,23 +751,27 @@ describe("CLI: check-commit-message.mjs", () => {
     });
 
     it("reads the message from stdin when FILE is omitted", async (t) => {
-      t.assert.equal((await run([], "auth: from stdin")).status, 0);
+      const result = await run([], "auth: from stdin");
+      t.assert.equal(result.status, 0);
     });
 
     it("reads the message from stdin for '-'", async (t) => {
-      t.assert.equal((await run(["-"], "auth: from stdin")).status, 0);
+      const result = await run(["-"], "auth: from stdin");
+      t.assert.equal(result.status, 0);
     });
 
     it("reads a message file passed as FILE", async (t) => {
       const file = join(dir, "COMMIT_EDITMSG");
       await writeFile(file, "auth: from a file\n");
-      t.assert.equal((await run([file])).status, 0);
+      const result = await run([file]);
+      t.assert.equal(result.status, 0);
     });
 
     it("reads a message file after --", async (t) => {
       const file = join(dir, "AFTER_DASH_DASH");
       await writeFile(file, "auth: after --\n");
-      t.assert.equal((await run(["--", file])).status, 0);
+      const result = await run(["--", file]);
+      t.assert.equal(result.status, 0);
     });
 
     it("treats stdin and file input identically", async (t) => {
@@ -472,5 +785,102 @@ describe("CLI: check-commit-message.mjs", () => {
         { status: fromStdin.status, stdout: fromStdin.stdout, stderr: fromStdin.stderr },
       );
     });
+  });
+});
+
+describe("CLI: scope allowlist discovery", () => {
+  let dir;
+
+  before(async () => {
+    dir = await mkdtemp(join(tmpdir(), "scopedcommits-discovery-"));
+    await mkdir(join(dir, ".git"));
+  });
+
+  after(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("skips when there is no CONTRIBUTING.md", async (t) => {
+    const result = await run(["-"], "auth: fix", { cwd: dir });
+    t.assert.equal(result.status, 0);
+  });
+
+  it("skips when CONTRIBUTING.md has no scopes frontmatter", async (t) => {
+    const repo = join(dir, "no-block");
+    await mkdir(repo);
+    await mkdir(join(repo, ".git"));
+    await writeFile(join(repo, "CONTRIBUTING.md"), "# Contributing\n");
+    const result = await run(["-"], "auth: fix", { cwd: repo });
+    t.assert.equal(result.status, 0);
+  });
+
+  it("ignores CONTRIBUTING.md outside a repository", async (t) => {
+    const outside = await mkdtemp(join(tmpdir(), "scopedcommits-outside-"));
+    try {
+      if (await hasAncestorGit(outside)) {
+        t.skip("TMPDIR is inside a Git repository");
+        return;
+      }
+      await writeFile(join(outside, "CONTRIBUTING.md"), '---\n{"scopes":["git"]}\n---\n');
+      const result = await run(["-"], "auth: fix", { cwd: outside });
+      t.assert.equal(result.status, 0);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("does not inherit a parent repository's frontmatter", async (t) => {
+    const parent = join(dir, "parent");
+    const child = join(parent, "child");
+    await mkdir(join(parent, ".git"), { recursive: true });
+    await mkdir(join(child, ".git"), { recursive: true });
+    await writeFile(join(parent, "CONTRIBUTING.md"), '---\n{"scopes":["git"]}\n---\n');
+    const result = await run(["-"], "auth: fix", { cwd: child });
+    t.assert.equal(result.status, 0);
+  });
+
+  it("treats a .git file as a repository root", async (t) => {
+    const repo = join(dir, "worktree");
+    await mkdir(repo);
+    await writeFile(join(repo, ".git"), "gitdir: /tmp/elsewhere\n");
+    await writeFile(join(repo, "CONTRIBUTING.md"), '---\n{"scopes":["git"]}\n---\n');
+    const result = await run(["-"], "auth: fix", { cwd: repo });
+    t.assert.equal(result.status, 1);
+    t.assert.match(result.stderr, /unknown scope "auth"/);
+  });
+
+  it("enforces frontmatter scopes", async (t) => {
+    const repo = join(dir, "with-block");
+    await mkdir(repo);
+    await mkdir(join(repo, ".git"));
+    await writeFile(join(repo, "CONTRIBUTING.md"), '---\n{"scopes":["git"]}\n---\n');
+
+    const ok = await run(["-"], "git: fix", { cwd: repo });
+    t.assert.equal(ok.status, 0);
+
+    const bad = await run(["-"], "auth: fix", { cwd: repo });
+    t.assert.equal(bad.status, 1);
+    t.assert.match(bad.stderr, /unknown scope "auth"/);
+  });
+
+  it("finds the frontmatter at the repository root from a subdirectory", async (t) => {
+    const repo = join(dir, "repo");
+    const sub = join(repo, "sub");
+    await mkdir(join(repo, ".git"), { recursive: true });
+    await mkdir(sub, { recursive: true });
+    await writeFile(join(repo, "CONTRIBUTING.md"), '---\n{"scopes":["git"]}\n---\n');
+    const result = await run(["-"], "bogus: fix", { cwd: sub });
+    t.assert.equal(result.status, 1);
+    t.assert.match(result.stderr, /unknown scope "bogus"/);
+  });
+
+  it("reports malformed frontmatter as a usage error", async (t) => {
+    const repo = join(dir, "malformed");
+    await mkdir(repo);
+    await mkdir(join(repo, ".git"));
+    await writeFile(join(repo, "CONTRIBUTING.md"), '---\n{"scopes":["auth"]\n---\n');
+    const result = await run(["-"], "auth: fix", { cwd: repo });
+    t.assert.equal(result.status, 1);
+    t.assert.match(result.stderr, /invalid JSON frontmatter/);
   });
 });
