@@ -130,7 +130,7 @@ describe("CLI: check-commit-messages.mjs", () => {
   it("prints the outcome when every message is valid", async (t) => {
     const result = await run(["--", "--max-count=1", "HEAD~3"], { cwd: dir, env });
     t.assert.equal(result.status, 0);
-    t.assert.match(result.stdout, /ok: 1 commit message\(s\)/);
+    t.assert.match(result.stdout, /1 commit messages validated in /);
     t.assert.equal(result.stderr, "");
   });
 
@@ -144,13 +144,13 @@ describe("CLI: check-commit-messages.mjs", () => {
     const result = await run(["--", "--max-count=1", "HEAD"], { cwd: dir, env });
     t.assert.equal(result.status, 0);
     t.assert.match(result.stderr, /warning:/);
-    t.assert.match(result.stdout, /ok: 1 commit message\(s\)/);
+    t.assert.match(result.stdout, /1 commit messages validated in /);
   });
 
   it("accepts an empty range", async (t) => {
     const result = await run(["--", "HEAD..HEAD"], { cwd: dir, env });
     t.assert.equal(result.status, 0);
-    t.assert.match(result.stdout, /ok: 0 commit message\(s\)/);
+    t.assert.match(result.stdout, /0 commit messages validated in HEAD\.\.HEAD/);
     t.assert.equal(result.stderr, "");
   });
 
@@ -160,7 +160,7 @@ describe("CLI: check-commit-messages.mjs", () => {
       env,
     });
     t.assert.equal(result.status, 0);
-    t.assert.match(result.stdout, /ok: 1 commit message\(s\)/);
+    t.assert.match(result.stdout, /1 commit messages validated in /);
     t.assert.equal(result.stderr, "");
   });
 

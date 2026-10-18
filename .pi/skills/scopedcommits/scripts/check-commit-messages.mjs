@@ -104,7 +104,7 @@ async function main() {
     console.error("one or more commit messages do not follow Scoped Commits");
     process.exitCode = 1;
   } else {
-    console.log(`ok: ${commits.length} commit message(s)`);
+    console.log(`${commits.length} commit messages validated in ${revs.join(" ")}`);
   }
 }
 
