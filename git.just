@@ -46,8 +46,8 @@ sign-allowlist:
     mv "${tmp}.sig" "$sig"
     log 'wrote %s' "$sig"
 
-# Verify the allowlist signature, then every commit's signature
-verify-signatures:
+# Verify the allowlist signature, then signatures on unpushed commits (or a given range)
+verify-signatures range='':
     #!/bin/sh -eu
     log() { printf "$@"; printf '\n'; }
     die() { log "$@" >&2; exit 1; }
@@ -65,10 +65,20 @@ verify-signatures:
         -n git \
         -s "$sig" \
         < "$allowlist" || die 'invalid %s' "$sig"
-    unsigned=$(git log --format='%h %G? %s' | awk '$2 != "G"')
+    range='{{range}}'
+    upstream=$(git rev-parse --abbrev-ref '@{upstream}' 2>/dev/null || true)
+    if [ -n "$range" ]; then
+        set -- "$range"
+    elif [ -n "$upstream" ]; then
+        set -- "$upstream..HEAD"
+    else
+        set -- HEAD --not --remotes
+    fi
+    count=$(git rev-list --count "$@") || die 'cannot list commits: %s' "$*"
+    unsigned=$(git log --format='%h %G? %s' "$@" | awk '$2 != "G"')
     [ -z "$unsigned" ] ||
         die 'Unsigned or unverifiable commits:\n\n%s' "$unsigned"
-    log '%s commits verified' "$(git rev-list --count HEAD)"
+    log '%s commits verified' "$count"
 
 # Check messages on unpushed commits (or a given range)
 check-commit-messages range='':
