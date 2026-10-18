@@ -19,6 +19,9 @@ This project uses these scopes:
 
 - `treewide:`
   — repository-wide changes.
+- `git:`
+  — Git workflow and tooling
+  (commit and push checks, signing, hooks).
 - `skills/<name>:`
   — a skill under `.pi/skills/`
   (`skills/scopedcommits:`, `skills/rfc2119:`).
