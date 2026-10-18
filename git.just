@@ -64,7 +64,8 @@ verify-signatures range='':
         -I "$email" \
         -n git \
         -s "$sig" \
-        < "$allowlist" || die 'invalid %s' "$sig"
+        < "$allowlist" >/dev/null || die 'invalid %s' "$sig"
+    log 'allowlist signature verified for %s' "$email"
     range='{{range}}'
     upstream=$(git rev-parse --abbrev-ref '@{upstream}' 2>/dev/null || true)
     if [ -n "$range" ]; then
@@ -78,7 +79,7 @@ verify-signatures range='':
     unsigned=$(git log --format='%h %G? %s' "$@" | awk '$2 != "G"')
     [ -z "$unsigned" ] ||
         die 'Unsigned or unverifiable commits:\n\n%s' "$unsigned"
-    log '%s commits verified' "$count"
+    log '%s commit signatures verified in %s' "$count" "$*"
 
 # Check one commit message file
 check-commit-message file:
