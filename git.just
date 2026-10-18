@@ -80,6 +80,10 @@ verify-signatures range='':
         die 'Unsigned or unverifiable commits:\n\n%s' "$unsigned"
     log '%s commits verified' "$count"
 
+# Check one commit message file
+check-commit-message file:
+    @.pi/skills/scopedcommits/scripts/check-commit-message.mjs -- '{{file}}'
+
 # Check messages on unpushed commits (or a given range)
 check-commit-messages range='':
     #!/bin/sh -eu
