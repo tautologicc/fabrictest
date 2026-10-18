@@ -14,7 +14,7 @@ add-signing-key principal keyfile: && sign-allowlist
     [ -f "$keyfile" ] || die 'public key not found: %s' "$keyfile"
     keytype=
     keydata=
-    read -r keytype keydata _ < "$keyfile" || :
+    read -r keytype keydata _ <"$keyfile" || :
     { [ -n "$keytype" ] && [ -n "$keydata" ]; } ||
         die 'invalid public key: %s' "$keyfile"
     { ! grep -Fq " $keydata" "$allowlist"; } ||
@@ -23,7 +23,7 @@ add-signing-key principal keyfile: && sign-allowlist
     if [ -s "$allowlist" ] && [ -n "$(tail -c 1 "$allowlist")" ]; then
         nl='\n'
     fi
-    printf '%s%s %s %s\n' "$nl" "$principal" "$keytype" "$keydata" >> "$allowlist"
+    printf '%s%s %s %s\n' "$nl" "$principal" "$keytype" "$keydata" >>"$allowlist"
     log 'added %s' "$principal"
 
 # Sign the allowlist with the SSH key
@@ -64,7 +64,7 @@ verify-signatures range='':
         -I "$email" \
         -n git \
         -s "$sig" \
-        < "$allowlist" >/dev/null || die 'invalid %s' "$sig"
+        <"$allowlist" >/dev/null || die 'invalid %s' "$sig"
     log 'allowlist signature verified for %s' "$email"
     range='{{range}}'
     upstream=$(git rev-parse --abbrev-ref '@{upstream}' 2>/dev/null || true)
