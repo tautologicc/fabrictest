@@ -27,6 +27,7 @@ add-signing-key principal keyfile: && sign-allowlist
     log 'added %s' "$principal"
 
 # Sign the allowlist with the SSH key
+[private]
 sign-allowlist:
     #!/bin/sh -eu
     log() { printf "$@" ; printf '\n'; }
