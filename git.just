@@ -83,10 +83,8 @@ verify-signatures range='':
 # Check messages on unpushed commits (or a given range)
 check-commit-messages range='':
     #!/bin/sh -eu
-    log() { printf "$@"; printf '\n'; }
-    die() { log "$@" >&2; exit 1; }
     range='{{range}}'
-    upstream=$(git rev-parse --abbrev-ref '@{upstream}' 2>/dev/null || true)
+    upstream=$(git rev-parse --abbrev-ref '@{upstream}' 2>/dev/null || :)
     if [ -n "$range" ]; then
         set -- "$range"
     elif [ -n "$upstream" ]; then
@@ -94,11 +92,4 @@ check-commit-messages range='':
     else
         set -- HEAD --not --remotes
     fi
-    commits=$(git rev-list "$@") || die 'cannot list commits: %s' "$*"
-    count=0
-    for commit in $commits; do
-        git show -s --format=%B "$commit" |
-            .pi/skills/scopedcommits/scripts/check-commit-message.mjs
-        count=$((count + 1))
-    done
-    log '%s commit message(s) valid' "$count"
+    .pi/skills/scopedcommits/scripts/check-commit-messages.mjs -- "$@"
