@@ -22,10 +22,13 @@ agents MUST read the `scopedcommits` skill
 and follow its convention.
 
 This project uses the scopes in the frontmatter above. The commit-message
-checker enforces them. The list covers repository-wide changes
-(`treewide`), Git workflow and tooling (`git`), and every skill under
-`.pi/skills/` (`skills/`). See the `scopedcommits` skill for the pattern
-syntax.
+checker enforces them:
+
+- `treewide` — repository-wide changes
+- `git` — Git workflow and tooling
+- `skills/` — every skill under `.pi/skills/`
+
+See the `scopedcommits` skill for the pattern syntax.
 
 You MUST use one of these scopes,
 or add the new scope to the `scopes` array in the frontmatter
