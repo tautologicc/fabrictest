@@ -86,14 +86,4 @@ check-commit-message file:
 
 # Check messages on unpushed commits (or a given range)
 check-commit-messages range='':
-    #!/bin/sh -eu
-    range='{{range}}'
-    upstream=$(git rev-parse --abbrev-ref '@{upstream}' 2>/dev/null || :)
-    if [ -n "$range" ]; then
-        set -- "$range"
-    elif [ -n "$upstream" ]; then
-        set -- "$upstream..HEAD"
-    else
-        set -- HEAD --not --remotes
-    fi
-    .pi/skills/scopedcommits/scripts/check-commit-messages.mjs -- "$@"
+    @.pi/skills/scopedcommits/scripts/check-commit-messages.mjs -- '{{range}}'
