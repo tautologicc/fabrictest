@@ -224,6 +224,14 @@ The description completes the sentence
 "This commit, in `<scope>`, ...".
 A good description lets the subject alone
 tell a contributor what changed.
+You SHOULD name the change that dominates the whole diff,
+not the last edit you made.
+When a commit bundles a main change with follow-up fixes,
+lead with the main change;
+the diff records the rest, and the body records why.
+You SHOULD NOT let the event that triggered the work
+(a review, a ticket, a bug report)
+stand in for what changed or why it changed.
 You SHOULD keep the subject within 72 characters
 unless the project defines a different length limit
 or the description genuinely needs more detail.
@@ -373,6 +381,7 @@ Projects MAY define their own rules for them.
 | `src/auth/login.ts: handle empty pw`    | File name is not a subsystem                               | `auth: handle empty password in login`              |
 | `misc: clean up`                        | Scope identifies nothing                                   | Name the area, or use `treewide`                    |
 | `refactor(core): Update webmcp support` | Fix and feat forced into one label                         | `core/webmcp: support document.modelContext`        |
+| `skills/gfm-alerts: fix issues a review found` | Names the trigger and the follow-up fixes, not the main change | `skills/gfm-alerts: reorganize the skill around each alert type` |
 
 ## Changelogs and automation
 
@@ -439,6 +448,11 @@ flowchart LR
     Validate -- "errors" --> Draft
     Validate -- "clean" --> Commit["git commit"]
 ```
+
+The first step is not optional:
+you MUST read the staged diff before drafting the subject,
+and you SHOULD derive the subject from the whole diff
+rather than from your most recent edits.
 
 ## Validation
 
