@@ -94,8 +94,8 @@ and the established style in `git log --oneline -30`).
   Special commits (merges, reverts, fixups, squashes, amends)
   are handled below.
 
-For SHOULD and MAY rules, repository policy outranks this skill.
-If repository policy conflicts with a MUST or a MUST NOT stated here,
+For "SHOULD" and "MAY" rules, repository policy outranks this skill.
+If repository policy conflicts with a "MUST" or a "MUST NOT" stated here,
 you MUST halt, report the conflict, and ask which rule to follow.
 
 The bundled validator can enforce a project's scope vocabulary when the
@@ -512,7 +512,7 @@ requirementDiagram
 
     requirement project_precedence {
         id: R4
-        text: "Apply repository rules over SHOULD and MAY rules and halt for MUST conflicts"
+        text: "Apply repository rules over “SHOULD” and “MAY” rules and halt for “MUST” conflicts"
         risk: High
         verifymethod: Inspection
     }
