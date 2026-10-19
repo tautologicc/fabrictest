@@ -118,8 +118,8 @@ You SHOULD use the delimiter style shown in the project's `scopes` array.
 Scope matching is case-sensitive. Glob metacharacters (`*`, `?`, `[`,
 `]`, `{`, `}`) are configuration errors. No frontmatter or no `scopes` key
 means only portable rules apply. Invalid JSON, a non-object, a
-non-array, an empty array, or an empty pattern is a configuration error
-(exit 2). The CLI discovers the frontmatter in the current repository
+non-array, an empty array, or an empty pattern is a configuration error.
+The CLI discovers the frontmatter in the current repository
 root; run it from the repository being checked. The library takes an
 explicit `scopes` array and rejects empty or glob-like patterns. A
 description containing `: ` is treated as a deeper scope; combining that
