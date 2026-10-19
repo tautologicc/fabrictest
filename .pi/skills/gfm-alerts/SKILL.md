@@ -6,7 +6,7 @@ description: >-
   "use gfm-alerts", "use GitHub alert syntax",
   "convert to alert", "which alert type should I use",
   or when asking "what does this warning mean",
-  "explain the NOTE/TIP/IMPORTANT/CAUTION".
+  "explain the NOTE/TIP/IMPORTANT/WARNING/CAUTION".
   Also applies when interpreting alerts in skill files or documentation.
   Covers GitHub-Flavored Markdown alert syntax,
   writing guidelines, and semantic interpretation.
@@ -27,23 +27,15 @@ indicating the importance of the content.
 
 ## Quick reference
 
-| Type           | Purpose                    | Severity |
-| -------------- | -------------------------- | -------- |
-| `[!TIP]`       | Optional advice            | Lowest   |
-| `[!NOTE]`      | Context to keep in mind    | Low      |
-| `[!IMPORTANT]` | Required action or setting | Medium   |
-| `[!WARNING]`   | External risk              | High     |
-| `[!CAUTION]`   | Action may cause harm      | Highest  |
+| Type           | Purpose                                 | Severity |
+| -------------- | --------------------------------------- | -------- |
+| `[!TIP]`       | Optional advice                         | Lowest   |
+| `[!NOTE]`      | Context to keep in mind                 | Low      |
+| `[!IMPORTANT]` | Required action or setting              | Medium   |
+| `[!WARNING]`   | External risk regardless of user action | High     |
+| `[!CAUTION]`   | User action may cause harm              | Highest  |
 
-> [!IMPORTANT]
->
-> `WARNING` = external risk exists regardless of user action.
->
-> `CAUTION` = the user's own action may cause harm.
-
-## Writing alerts
-
-### Syntax
+## Syntax
 
 Alerts use blockquote syntax with a special type marker:
 
@@ -60,13 +52,22 @@ Alerts use blockquote syntax with a special type marker:
 > - On its own line immediately after `>`
 > - One of the five valid types:
 >   `TIP`, `NOTE`, `IMPORTANT`, `WARNING`, `CAUTION`
-> - In uppercase
 
-### The five alert types
+The marker is case-insensitive on GitHub:
+`[!note]` and `[!NOTE]` render identically.
+Uppercase is the conventional spelling in GitHub's documentation.
 
-#### `TIP`
+## The five alert types
+
+Each alert type has a respective semantic weight.
+Take this into account
+when reading skill files, agent definitions, or documentation.
+
+### `TIP`
 
 Optional information to help a user be more successful.
+Apply when applicable;
+safe to skip if context differs.
 
 ```markdown
 > [!TIP]
@@ -81,10 +82,11 @@ Optional information to help a user be more successful.
 - Best practices
 - Shortcuts and conveniences
 
-#### `NOTE`
+### `NOTE`
 
 Highlights information users should take into account,
 even when skimming.
+Useful context but not directly actionable.
 
 ```markdown
 > [!NOTE]
@@ -95,15 +97,15 @@ even when skimming.
 **Use for:**
 
 - Supplementary context
-- Version requirements
-- Non-obvious prerequisites
-- Dependencies the reader must have
-- Information without which the task will fail
+- Prerequisite context (version and dependency requirements)
 - "Good to know" information
 
-#### `IMPORTANT`
+### `IMPORTANT`
 
 Crucial information necessary for users to succeed.
+Treat the content as must-know.
+When the alert carries no explicit RFC 2119 keyword,
+treat any directive inside it as a hard requirement.
 
 ```markdown
 > [!IMPORTANT]
@@ -117,11 +119,13 @@ Crucial information necessary for users to succeed.
 - Configuration that the reader must set correctly
 - Actions that the task fails without
 
-#### `WARNING`
+### `WARNING`
 
-A risk exists independent of the user's action.
+A risk exists independently of the user's action.
 The danger comes from external factors
 — a deprecated API, a known bug, a security vulnerability.
+Factor the external risk into your approach;
+proceed with awareness.
 
 ```markdown
 > [!WARNING]
@@ -136,10 +140,11 @@ The danger comes from external factors
 - Performance impacts
 - Breaking changes
 
-#### `CAUTION`
+### `CAUTION`
 
 The user's action may cause negative consequences.
 The danger comes from what the user is about to do.
+Verify the action is necessary and safe in your context before proceeding.
 
 ```markdown
 > [!CAUTION]
@@ -155,7 +160,7 @@ The danger comes from what the user is about to do.
 - Edge cases that cause problems
 - "Proceed with care" situations
 
-### Choosing the right type
+## Choosing the right type
 
 Follow the decision path:
 
@@ -180,15 +185,15 @@ Common ambiguities:
   `WARNING` is for danger that exists even when the reader does nothing.
 - A required step that is itself harmful is `CAUTION`;
   the harmful consequence is the stronger signal.
-- You SHOULD use `NOTE` for information the reader needs while working,
-  and `TIP` for advice the task can succeed without.
+- `NOTE` is for information the reader needs while working;
+  `TIP` is for advice the task can succeed without.
 - When the content carries an explicit RFC 2119 keyword,
   choose the alert by the consequence, not the keyword
-  (see "Interpreting alerts").
+  (see "With RFC 2119 keywords").
 
-### Formatting guidelines
+## Formatting guidelines
 
-#### Multi-line content
+### Multi-line content
 
 Continue content on subsequent lines with `>`:
 
@@ -201,7 +206,7 @@ Continue content on subsequent lines with `>`:
 > Recovery is not possible after completion.
 ```
 
-#### With other Markdown
+### With other Markdown
 
 Alerts support standard Markdown inside:
 
@@ -215,7 +220,7 @@ Alerts support standard Markdown inside:
 > [grep manual](https://man7.org/linux/man-pages/man1/grep.1.html).
 ```
 
-#### With lists
+Lists render inside alerts:
 
 ```markdown
 > [!IMPORTANT]
@@ -227,7 +232,7 @@ Alerts support standard Markdown inside:
 > - Notify the on-call team
 ```
 
-#### Placement
+### Placement
 
 - You SHOULD place alerts near the content they relate to.
   Placement at section boundaries is acceptable
@@ -238,12 +243,10 @@ Alerts support standard Markdown inside:
 - You SHOULD put notes and tips after introducing the concept.
   Leading placement is acceptable for prerequisites.
 
-#### Length and frequency
+### Length and frequency
 
-> [!TIP]
->
-> If everything is important, nothing is.
-> Use alerts sparingly to preserve their impact.
+If everything is important, nothing is.
+Use alerts sparingly to preserve their impact.
 
 - You SHOULD keep alerts concise
   — long alerts lose impact.
@@ -254,12 +257,9 @@ Alerts support standard Markdown inside:
   Stacking is acceptable
   when alerts are at different severity levels for the same topic.
 
-### Common mistakes
+## Common mistakes
 
-> [!IMPORTANT]
->
-> These syntax errors cause alerts to render as plain blockquotes
-> with no visual distinction.
+The following mistakes break alert rendering.
 
 ```markdown
 <!-- WRONG — type marker not on its own line -->
@@ -271,20 +271,6 @@ Alerts support standard Markdown inside:
 > [!NOTE]
 >
 > This renders correctly.
-```
-
-```markdown
-<!-- WRONG — lowercase type -->
-
-> [!note]
->
-> This won't be recognized.
-
-<!-- CORRECT -->
-
-> [!NOTE]
->
-> This is recognized.
 ```
 
 ```markdown
@@ -305,21 +291,20 @@ Alerts support standard Markdown inside:
 > [!CAUTION]
 >
 > You MUST NOT place content on the same line as the type marker.
-> You MUST NOT use lowercase alert types.
 > You MUST NOT nest alerts inside other alerts
-> — GitHub ignores the inner alert marker silently.
+> — GitHub renders the inner alert marker as plain text.
 
 You SHOULD NOT create alerts with no content body.
-An empty alert adds visual noise without information.
+An empty alert is worse than useless:
+it adds visual noise without information.
 
-### With RFC 2119 keywords
+## With RFC 2119 keywords
 
-> [!IMPORTANT]
->
-> You MUST preserve RFC 2119 keywords when converting content to alerts.
-> Alerts convey visual emphasis;
-> keywords convey obligation strength.
-> They are complementary, not interchangeable.
+You MUST preserve RFC 2119 keywords when converting content to alerts.
+Alerts convey visual emphasis;
+keywords convey obligation strength.
+They are complementary, not interchangeable.
+Alerts MUST NOT drop or downgrade an RFC 2119 keyword.
 
 ```markdown
 <!-- WRONG — keyword dropped -->
@@ -342,28 +327,11 @@ An empty alert adds visual noise without information.
 > A "SHOULD" that becomes unmarked prose
 > reads as a suggestion instead of a justified-deviation rule.
 
-## Interpreting alerts
-
-When reading skill files, agent definitions, or documentation,
-treat alerts according to their semantic weight:
-
-> [!IMPORTANT]
->
-> When an alert contains explicit RFC 2119 keywords,
-> those keywords define the obligation
-> — the alert type provides visual emphasis,
-> not an obligation override.
+When an alert contains explicit RFC 2119 keywords,
+those keywords define the obligation
+— the alert type provides visual emphasis,
+not an obligation override.
 
 When an alert contains no RFC 2119 keywords,
-use the alert type as a default interpretation:
-
-- `TIP` — apply when applicable;
-  safe to skip if context differs.
-- `NOTE` — useful context but not directly actionable.
-- `IMPORTANT` — treat the content as must-know;
-  any directive inside it is a hard requirement
-  unless explicitly overridden.
-- `WARNING` — factor the external risk into your approach;
-  proceed with awareness.
-- `CAUTION` — verify the action is necessary
-  and safe in your context before proceeding.
+use the alert type as the default interpretation,
+as described in each type's section above.
