@@ -252,9 +252,17 @@ unless the project's length or style rules say otherwise.
 
 ## Body, trailers, and tickets
 
-The body SHOULD explain why the change was made,
-unless the reason is evident from the subject or diff.
-It is also the place for context a reviewer cannot see in the diff.
+The body SHOULD explain why the change was made: the motivation and
+context a reviewer cannot reconstruct from the diff. The subject and
+the diff record what changed; the body records why.
+
+You MAY omit the body only when the reason is already stated in the
+subject or diff, not when it can merely be inferred from them. A small
+diff or a descriptive subject does not make the reason evident, since
+both describe the change rather than its motivation. Before omitting
+the body, ask whether a reader could quote the reason from the subject
+or diff, or would have to reconstruct it. If reconstruction is
+required, write the body.
 
 ```text
 auth: prevent token refresh from racing expiry
@@ -566,6 +574,13 @@ requirementDiagram
         verifymethod: Inspection
     }
 
+    requirement body_motivation {
+        id: R12
+        text: "Record why the change was made in the body unless the reason is stated in the subject or diff"
+        risk: Medium
+        verifymethod: Inspection
+    }
+
     element commit_message {
         type: artifact
         docRef: "Git commit message"
@@ -584,6 +599,7 @@ requirementDiagram
     commit_message - satisfies -> multi_scope
     commit_message - satisfies -> ticket_placement
     commit_message - satisfies -> revert_handling
+    commit_message - satisfies -> body_motivation
     project_policy - satisfies -> project_precedence
     project_policy - satisfies -> no_log_changelog
     project_policy - satisfies -> diff_based_automation
@@ -596,7 +612,7 @@ it also enforces vocabulary membership (R6);
 whether the chosen scope is the best reuse remains review.
 R3 is partly mechanical: ticket-like scopes are flagged,
 and unknown file or change-kind scopes fail the allowlist.
-R4, R7, R9, R10, and R11 remain review obligations.
+R4, R7, R9, R10, R11, and R12 remain review obligations.
 
 ## Sources
 
